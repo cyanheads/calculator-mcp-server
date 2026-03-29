@@ -5,6 +5,21 @@
 **Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
 
 > **Read the framework docs first:** `node_modules/@cyanheads/mcp-ts-core/CLAUDE.md` contains the full API reference — builders, Context, error codes, exports, patterns. This file covers server-specific conventions only.
+>
+> **Design doc:** `docs/design.md` contains the full design rationale, error tables, workflow examples, and known limitations.
+
+A publicly-hosted calculator MCP server that lets any LLM verify mathematical computations. Powered by [math.js](https://mathjs.org/) v15. No auth required — all operations are read-only and stateless.
+
+### MCP Surface
+
+| Primitive | Name | Purpose |
+|:----------|:-----|:--------|
+| Tool | `calculate` | Evaluate, simplify, or differentiate math expressions. Single tool — `operation` param defaults to `evaluate`. |
+| Resource | `calculator://help` | Static reference of available functions, operators, constants, and syntax. |
+
+### Security Model
+
+MathService wraps a **hardened math.js instance** — dangerous functions (`import`, `createUnit`, `evaluate`, `parse`, `compile`, `chain`, `config`, `resolve`, `reviver`) are disabled in the expression scope. `simplify` and `derivative` are also disabled in expressions but called programmatically by the tool handler. Evaluation runs inside `vm.runInNewContext()` with a timeout. Input length is capped. Semicolons are rejected (single expression per call only). Variable scope accepts `z.record(z.number())` only — no strings, objects, or functions can be injected.
 
 ---
 
@@ -113,18 +128,25 @@ export const reviewCode = prompt('review_code', {
 ```ts
 // src/config/server-config.ts — lazy-parsed, separate from framework config
 const ServerConfigSchema = z.object({
-  myApiKey: z.string().describe('External API key'),
-  maxResults: z.coerce.number().default(100),
+  maxExpressionLength: z.coerce.number().default(1000)
+    .describe('Maximum allowed expression string length'),
+  evaluationTimeoutMs: z.coerce.number().default(5000)
+    .describe('Maximum evaluation time in milliseconds'),
 });
 let _config: z.infer<typeof ServerConfigSchema> | undefined;
 export function getServerConfig() {
   _config ??= ServerConfigSchema.parse({
-    myApiKey: process.env.MY_API_KEY,
-    maxResults: process.env.MY_MAX_RESULTS,
+    maxExpressionLength: process.env.CALC_MAX_EXPRESSION_LENGTH,
+    evaluationTimeoutMs: process.env.CALC_EVALUATION_TIMEOUT_MS,
   });
   return _config;
 }
 ```
+
+| Env Var | Default | Description |
+|:--------|:--------|:------------|
+| `CALC_MAX_EXPRESSION_LENGTH` | `1000` | Max input string length |
+| `CALC_EVALUATION_TIMEOUT_MS` | `5000` | Evaluation timeout in ms |
 
 ---
 
@@ -263,7 +285,8 @@ import { tool, z } from '@cyanheads/mcp-ts-core';
 import { McpError, JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 
 // Server's own code — via path alias
-import { getMyService } from '@/services/my-domain/my-service.js';
+import { getMathService } from '@/services/math/math-service.js';
+import { getServerConfig } from '@/config/server-config.js';
 ```
 
 ---
