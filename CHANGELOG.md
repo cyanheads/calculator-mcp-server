@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.3 — 2026-03-29
+
+Input validation hardening, resource listing support, and documentation updates.
+
+### Changed
+
+- Added `.min(1)` validation to `expression` input — empty strings now rejected at schema level
+- Changed `precision` minimum from 0 to 1 (significant digits must be at least 1)
+- Added empty-expression guard in `MathService.validateInput()`
+- Added `list` callback to `calculator://help` resource for resource listing support
+- Updated `server.json` description wording
+- Added floating-point rounding note to help content for unit conversions
+- Added `migrate-mcp-ts-template` skill and `bun run lint:mcp` command to agent protocol
+
 ## 0.1.2 — 2026-03-28
 
 Core calculator implementation — replaces scaffold echo tool with full math evaluation surface.

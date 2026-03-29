@@ -1,7 +1,7 @@
 # Agent Protocol
 
 **Server:** calculator-mcp-server
-**Version:** 0.1.2
+**Version:** 0.1.3
 **Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
 
 > **Read the framework docs first:** `node_modules/@cyanheads/mcp-ts-core/CLAUDE.md` contains the full API reference — builders, Context, error codes, exports, patterns. This file covers server-specific conventions only.
@@ -239,6 +239,7 @@ Available skills:
 | `api-testing` | createMockContext, test patterns |
 | `api-utils` | Formatting, parsing, security, pagination, scheduling |
 | `api-workers` | Cloudflare Workers runtime |
+| `migrate-mcp-ts-template` | Migrate a template fork to use `@cyanheads/mcp-ts-core` as a package |
 
 When you complete a skill's checklist, check the boxes and add a completion timestamp at the end (e.g., `Completed: 2026-03-11`).
 
@@ -254,6 +255,7 @@ When you complete a skill's checklist, check the boxes and add a completion time
 | `bun run devcheck` | Lint + format + typecheck + security |
 | `bun run tree` | Generate directory structure doc |
 | `bun run format` | Auto-fix formatting |
+| `bun run lint:mcp` | Validate MCP definitions |
 | `bun run test` | Run tests |
 | `bun run dev:stdio` | Dev mode (stdio) |
 | `bun run dev:http` | Dev mode (HTTP) |
