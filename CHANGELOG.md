@@ -1,6 +1,29 @@
 # Changelog
 
-## [0.1.0] — 2026-03-28
+## 0.1.1 — 2026-03-28
+
+Package metadata, documentation, and agent protocol polish.
+
+### Added
+
+- README.md with tool/resource reference, configuration, getting started, and project structure
+- LICENSE (Apache 2.0)
+- `bunfig.toml` for Bun runtime configuration
+- Server-specific env vars (`CALC_MAX_EXPRESSION_LENGTH`, `CALC_EVALUATION_TIMEOUT_MS`) in `server.json` package definitions
+- `depcheck` devDependency
+
+### Changed
+
+- Scoped package name to `@cyanheads/calculator-mcp-server`
+- Updated `server.json` name to `io.github.cyanheads/calculator-mcp-server` with `bun` runtime hint
+- Updated agent protocol (CLAUDE.md) with actual calculator tool/resource patterns; trimmed unused context properties
+- Expanded package.json with keywords, homepage, bugs, author, and bun engine metadata
+- Updated Dockerfile labels with description and source URL
+- Updated `.env.example` with calculator-specific env vars
+- Updated `devcheck.config.json` to ignore `depcheck` and `tsx` deps
+- Regenerated `docs/tree.md`
+
+## 0.1.0 — 2026-03-28
 
 Initial project scaffold and design.
 

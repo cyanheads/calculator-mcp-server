@@ -1,19 +1,19 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "cyanheads/calculator-mcp-server",
-  "description": "A calculator MCP server providing arithmetic and mathematical operations.",
+  "name": "io.github.cyanheads/calculator-mcp-server",
+  "description": "A calculator MCP server that lets any LLM verify mathematical computations. Evaluate, simplify, and differentiate expressions via a single tool. Powered by math.js v15.",
   "repository": {
     "url": "https://github.com/cyanheads/calculator-mcp-server",
     "source": "github"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
-      "identifier": "calculator-mcp-server",
-      "runtimeHint": "node",
-      "version": "0.1.0",
+      "identifier": "@cyanheads/calculator-mcp-server",
+      "runtimeHint": "bun",
+      "version": "0.1.1",
       "packageArguments": [
         {
           "type": "positional",
@@ -25,6 +25,20 @@
         }
       ],
       "environmentVariables": [
+        {
+          "name": "CALC_MAX_EXPRESSION_LENGTH",
+          "description": "Maximum allowed expression string length.",
+          "format": "string",
+          "isRequired": false,
+          "default": "1000"
+        },
+        {
+          "name": "CALC_EVALUATION_TIMEOUT_MS",
+          "description": "Maximum evaluation time in milliseconds.",
+          "format": "string",
+          "isRequired": false,
+          "default": "5000"
+        },
         {
           "name": "MCP_LOG_LEVEL",
           "description": "Sets the minimum log level for output (e.g., 'debug', 'info', 'warn').",
@@ -40,9 +54,9 @@
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
-      "identifier": "calculator-mcp-server",
-      "runtimeHint": "node",
-      "version": "0.1.0",
+      "identifier": "@cyanheads/calculator-mcp-server",
+      "runtimeHint": "bun",
+      "version": "0.1.1",
       "packageArguments": [
         {
           "type": "positional",
@@ -54,6 +68,20 @@
         }
       ],
       "environmentVariables": [
+        {
+          "name": "CALC_MAX_EXPRESSION_LENGTH",
+          "description": "Maximum allowed expression string length.",
+          "format": "string",
+          "isRequired": false,
+          "default": "1000"
+        },
+        {
+          "name": "CALC_EVALUATION_TIMEOUT_MS",
+          "description": "Maximum evaluation time in milliseconds.",
+          "format": "string",
+          "isRequired": false,
+          "default": "5000"
+        },
         {
           "name": "MCP_HTTP_HOST",
           "description": "The hostname for the HTTP server.",

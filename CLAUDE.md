@@ -1,7 +1,7 @@
 # Agent Protocol
 
 **Server:** calculator-mcp-server
-**Version:** 0.1.0
+**Version:** 0.1.1
 **Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
 
 > **Read the framework docs first:** `node_modules/@cyanheads/mcp-ts-core/CLAUDE.md` contains the full API reference — builders, Context, error codes, exports, patterns. This file covers server-specific conventions only.
@@ -58,33 +58,42 @@ Tailor suggestions to what's actually missing or stale — don't recite the full
 
 ```ts
 import { tool, z } from '@cyanheads/mcp-ts-core';
+import { getMathService } from '@/services/math/math-service.js';
+import { getServerConfig } from '@/config/server-config.js';
 
-export const searchItems = tool('search_items', {
-  description: 'Search inventory items by query.',
-  annotations: { readOnlyHint: true },
+export const calculateTool = tool('calculate', {
+  description: 'Evaluate math expressions, simplify algebraic expressions, or compute symbolic derivatives.',
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   input: z.object({
-    query: z.string().describe('Search terms'),
-    limit: z.number().default(10).describe('Max results'),
+    expression: z.string()
+      .describe('Mathematical expression to evaluate (e.g., "2 + 3 * 4", "sin(pi/4)", "5 kg to lbs").'),
+    operation: z.enum(['evaluate', 'simplify', 'derivative']).default('evaluate')
+      .describe('Operation: "evaluate" (default), "simplify", or "derivative".'),
+    variable: z.string().optional()
+      .describe('Variable for differentiation. Required when operation is "derivative".'),
+    scope: z.record(z.number()).optional()
+      .describe('Variable assignments. Example: { "x": 5, "y": 3 }.'),
+    precision: z.number().int().min(0).max(64).optional()
+      .describe('Significant digits for numeric results. Ignored for symbolic operations.'),
   }),
   output: z.object({
-    items: z.array(z.object({
-      id: z.string().describe('Item ID'),
-      name: z.string().describe('Item name'),
-    })).describe('Matching items'),
+    result: z.string().describe('Computed result as a string.'),
+    resultType: z.string().describe('Type: number, BigNumber, Complex, Matrix, Unit, string, boolean.'),
+    expression: z.string().describe('Original expression as received.'),
   }),
-  auth: ['inventory:read'],
 
-  async handler(input, ctx) {
-    const items = await findItems(input.query, input.limit);
-    ctx.log.info('Search completed', { query: input.query, count: items.length });
-    return { items };
+  handler(input, ctx) {
+    const config = getServerConfig();
+    const math = getMathService();
+    // Dispatch based on operation mode — see design doc for full error table
+    const result = math.evaluate(input.expression, input.scope);
+    ctx.log.info('Evaluated expression', { expression: input.expression });
+    return { result: String(result), resultType: typeof result, expression: input.expression };
   },
 
-  // format() populates content[] — the only field most LLM clients forward to
-  // the model. Render all data the LLM needs, not just a count or title.
-  format: (result) => [{
+  format: (output) => [{
     type: 'text',
-    text: result.items.map(i => `**${i.id}**: ${i.name}`).join('\n'),
+    text: `**Expression:** \`${output.expression}\`\n**Result:** ${output.result}\n**Type:** ${output.resultType}`,
   }],
 });
 ```
@@ -92,34 +101,15 @@ export const searchItems = tool('search_items', {
 ### Resource
 
 ```ts
-import { resource, z } from '@cyanheads/mcp-ts-core';
+import { resource } from '@cyanheads/mcp-ts-core';
+import { getMathService } from '@/services/math/math-service.js';
 
-export const itemData = resource('inventory://{itemId}', {
-  description: 'Fetch an inventory item by ID.',
-  params: z.object({ itemId: z.string().describe('Item identifier') }),
-  auth: ['inventory:read'],
-  async handler(params, ctx) {
-    const item = await ctx.state.get(`item:${params.itemId}`);
-    if (!item) throw new Error(`Item ${params.itemId} not found`);
-    return item;
+export const helpResource = resource('calculator://help', {
+  description: 'Available functions, operators, constants, and syntax reference.',
+  handler() {
+    const math = getMathService();
+    return math.getHelpContent();
   },
-});
-```
-
-### Prompt
-
-```ts
-import { prompt, z } from '@cyanheads/mcp-ts-core';
-
-export const reviewCode = prompt('review_code', {
-  description: 'Review code for issues and best practices.',
-  args: z.object({
-    code: z.string().describe('Code to review'),
-    language: z.string().optional().describe('Programming language'),
-  }),
-  generate: (args) => [
-    { role: 'user', content: { type: 'text', text: `Review this ${args.language ?? ''} code:\n${args.code}` } },
-  ],
 });
 ```
 
@@ -157,11 +147,6 @@ Handlers receive a unified `ctx` object. Key properties:
 | Property | Description |
 |:---------|:------------|
 | `ctx.log` | Request-scoped logger — `.debug()`, `.info()`, `.notice()`, `.warning()`, `.error()`. Auto-correlates requestId, traceId, tenantId. |
-| `ctx.state` | Tenant-scoped KV — `.get(key)`, `.set(key, value, { ttl? })`, `.delete(key)`, `.list(prefix, { cursor, limit })`. Accepts any serializable value. |
-| `ctx.elicit` | Ask user for structured input. **Check for presence first:** `if (ctx.elicit) { ... }` |
-| `ctx.sample` | Request LLM completion from the client. **Check for presence first:** `if (ctx.sample) { ... }` |
-| `ctx.signal` | `AbortSignal` for cancellation. |
-| `ctx.progress` | Task progress (present when `task: true`) — `.setTotal(n)`, `.increment()`, `.update(message)`. |
 | `ctx.requestId` | Unique request ID. |
 | `ctx.tenantId` | Tenant ID from JWT or `'default'` for stdio. |
 
@@ -274,6 +259,23 @@ When you complete a skill's checklist, check the boxes and add a completion time
 | `bun run dev:http` | Dev mode (HTTP) |
 | `bun run start:stdio` | Production mode (stdio) |
 | `bun run start:http` | Production mode (HTTP) |
+
+---
+
+## Publishing
+
+After a version bump and final commit, publish to both npm and GHCR:
+
+```bash
+bun publish --access public
+
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t ghcr.io/cyanheads/calculator-mcp-server:<version> \
+  -t ghcr.io/cyanheads/calculator-mcp-server:latest \
+  --push .
+```
+
+Remind the user to run these after completing a release flow.
 
 ---
 
