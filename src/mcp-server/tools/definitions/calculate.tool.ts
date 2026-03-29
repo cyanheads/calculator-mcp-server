@@ -21,6 +21,7 @@ export const calculateTool = tool('calculate', {
   input: z.object({
     expression: z
       .string()
+      .min(1)
       .describe(
         'Mathematical expression to evaluate. Supports standard notation: ' +
           'arithmetic (+, -, *, /, ^, %), functions (sin, cos, sqrt, log, abs, round, etc.), ' +
@@ -51,11 +52,11 @@ export const calculateTool = tool('calculate', {
     precision: z
       .number()
       .int()
-      .min(0)
+      .min(1)
       .max(64)
       .optional()
       .describe(
-        'Number of significant digits for numeric results. Omit for full precision. Ignored for symbolic operations (simplify, derivative).',
+        'Significant digits (1\u201364) for numeric results. Omit for full precision. Ignored for symbolic operations (simplify, derivative).',
       ),
   }),
   output: z.object({

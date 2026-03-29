@@ -106,6 +106,9 @@ export class MathService {
   }
 
   private validateInput(expression: string): void {
+    if (!expression.trim()) {
+      throw invalidParams('Expression cannot be empty.');
+    }
     if (expression.length > this.config.maxExpressionLength) {
       throw invalidParams(
         `Expression exceeds maximum length of ${this.config.maxExpressionLength} characters.`,
@@ -241,8 +244,10 @@ Expression: \`x^2 + y\` => 28
 \`100 celsius to fahrenheit\` => 212 fahrenheit
 \`1 mile to km\` => 1.60934 km
 
+> **Note:** Unit conversions use IEEE 754 floating-point arithmetic. Results may include minor rounding artifacts (e.g., 211.99999999999997 instead of 212). Use the \`precision\` parameter to round.
+
 ### Precision
-Use the precision parameter (0-64 significant digits) for numeric results.
+Use the precision parameter (1\u201364 significant digits) for numeric results.
 
 ### Operations
 - **evaluate** (default): Compute a numeric result

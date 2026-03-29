@@ -13,4 +13,14 @@ export const helpResource = resource('calculator://help', {
   handler() {
     return getMathService().getHelpContent();
   },
+  list: () => ({
+    resources: [
+      {
+        uri: 'calculator://help',
+        name: 'Calculator Help',
+        description: 'Available functions, operators, constants, and syntax reference.',
+        mimeType: 'text/markdown',
+      },
+    ],
+  }),
 });
