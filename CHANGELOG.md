@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.2 — 2026-03-28
+
+Core calculator implementation — replaces scaffold echo tool with full math evaluation surface.
+
+### Added
+
+- `calculate` tool — evaluate, simplify, or differentiate math expressions via a single tool with `operation` parameter (defaults to `evaluate`)
+- `calculator://help` resource — static reference of available functions, operators, constants, and syntax
+- `MathService` with hardened math.js v15 instance — dangerous functions disabled in expression scope, evaluation sandboxed via `vm.runInNewContext()` with configurable timeout
+- Server config module (`src/config/server-config.ts`) — lazy-parsed Zod schema for `CALC_MAX_EXPRESSION_LENGTH` and `CALC_EVALUATION_TIMEOUT_MS`
+- `mathjs` v15 dependency
+- Test suite for calculate tool covering evaluate, simplify, derivative, error handling, and format output
+
+### Removed
+
+- Scaffold `echo` tool (`template_echo_message`)
+
 ## 0.1.1 — 2026-03-28
 
 Package metadata, documentation, and agent protocol polish.

@@ -1,6 +1,6 @@
 # calculator-mcp-server - Directory Structure
 
-Generated on: 2026-03-29 01:57:36
+Generated on: 2026-03-29 02:45:13
 
 ```text
 calculator-mcp-server/
@@ -81,12 +81,25 @@ calculator-mcp-server/
 │   └── setup/
 │       └── SKILL.md
 ├── src/
+│   ├── config/
+│   │   └── server-config.ts
 │   ├── mcp-server/
+│   │   ├── resources/
+│   │   │   └── definitions/
+│   │   │       └── help.resource.ts
 │   │   └── tools/
 │   │       └── definitions/
-│   │           └── echo.tool.ts
+│   │           └── calculate.tool.ts
+│   ├── services/
+│   │   └── math/
+│   │       ├── math-service.ts
+│   │       └── types.ts
 │   └── index.ts
 ├── tests/
+│   └── mcp-server/
+│       └── tools/
+│           └── definitions/
+│               └── calculate.tool.test.ts
 ├── .dockerignore
 ├── .env.example
 ├── .gitignore
