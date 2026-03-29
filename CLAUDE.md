@@ -264,7 +264,21 @@ When you complete a skill's checklist, check the boxes and add a completion time
 
 ## Publishing
 
-After a version bump and final commit, publish to both npm and GHCR:
+### Wrapup flow
+
+When running the git wrapup checklist (`polish-docs-meta` or equivalent):
+
+- **Minimum version bump is `0.0.1` (patch)** unless the user specifies a larger bump.
+- After the final commit, **create an annotated tag** and **push** (tags included):
+
+```bash
+git tag -a v<version> -m "v<version>"
+git push && git push --tags
+```
+
+### npm + Docker
+
+After tagging, publish to both npm and GHCR:
 
 ```bash
 bun publish --access public
@@ -275,7 +289,7 @@ docker buildx build --platform linux/amd64,linux/arm64 \
   --push .
 ```
 
-Remind the user to run these after completing a release flow.
+Remind the user to run the npm/Docker publish commands after completing a release flow.
 
 ---
 
