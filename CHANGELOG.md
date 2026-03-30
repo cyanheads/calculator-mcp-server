@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.8 — 2026-03-30
+
+Package metadata and dev dependency updates.
+
+### Added
+
+- Funding metadata — GitHub Sponsors and Buy Me a Coffee links in `package.json`
+
+### Changed
+
+- Expanded `author` field with email and homepage URL
+- Bumped `@biomejs/biome` from `^2.4.9` to `^2.4.10`
+
 ## 0.1.7 — 2026-03-30
 
 Public hosted instance and distribution metadata.
