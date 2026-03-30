@@ -39,6 +39,8 @@ export const calculateTool = tool('calculate', {
       ),
     variable: z
       .string()
+      .max(50)
+      .regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/, 'Variable name must be alphanumeric (a-z, A-Z, 0-9, _).')
       .optional()
       .describe(
         'Variable to differentiate with respect to. Required when operation is "derivative". Example: "x".',

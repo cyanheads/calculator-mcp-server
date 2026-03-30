@@ -51,14 +51,61 @@ const DISABLED_FUNCTIONS = [
   'compile',
   'chain',
   'config',
+  'parser',
 ] as const;
 
-/** Check for semicolons outside square brackets (matrix row separators use `;`). */
-function hasTopLevelSemicolon(expr: string): boolean {
+/**
+ * `typed` is NOT disabled here — it's used internally by math.js for function dispatch.
+ * Overriding it breaks trig/simplify/etc. Instead, `typed()` calls from expressions are
+ * caught by the BLOCKED_RESULT_TYPES check (resultType "function" is rejected).
+ */
+
+/**
+ * Constants/properties overridden in the expression scope to prevent info leakage.
+ * `version` exposes the exact math.js version (enables targeted CVE research).
+ */
+const REDACTED_CONSTANTS: Record<string, string> = {
+  version: 'redacted',
+};
+
+/**
+ * Result types that must never be returned to clients.
+ * Function references leak internal source code via toString().
+ * ResultSet indicates multi-expression evaluation (newline bypass).
+ */
+const BLOCKED_RESULT_TYPES = new Set(['function', 'Function', 'ResultSet', 'Parser']);
+
+/**
+ * Scope key names that could pollute the object prototype chain or shadow
+ * critical Object.prototype methods. Validated before passing to math.js.
+ */
+const BLOCKED_SCOPE_KEYS = new Set([
+  '__proto__',
+  '__defineGetter__',
+  '__defineSetter__',
+  '__lookupGetter__',
+  '__lookupSetter__',
+  'constructor',
+  'prototype',
+  'toString',
+  'valueOf',
+  'hasOwnProperty',
+  'isPrototypeOf',
+  'propertyIsEnumerable',
+  'toLocaleString',
+]);
+
+/**
+ * Check for expression separators outside square brackets.
+ * Semicolons inside `[...]` are valid matrix row separators.
+ * Newlines (`\n`, `\r`) are also expression separators in math.js.
+ */
+function hasExpressionSeparator(expr: string): boolean {
   let depth = 0;
   for (const ch of expr) {
     if (ch === '[') depth++;
     else if (ch === ']') depth--;
+    else if (ch === '\n' || ch === '\r') return true;
     else if (ch === ';' && depth === 0) return true;
   }
   return false;
@@ -87,11 +134,15 @@ export class MathService {
     this.typeOf = math.typeOf.bind(math);
 
     // Disable dangerous functions in expression scope
-    const disabled: Record<string, () => never> = {};
+    const disabled: Record<string, unknown> = {};
     for (const fn of DISABLED_FUNCTIONS) {
       disabled[fn] = () => {
         throw new Error(`Function "${fn}" is disabled for security.`);
       };
+    }
+    // Redact constants that leak implementation details
+    for (const [key, value] of Object.entries(REDACTED_CONSTANTS)) {
+      disabled[key] = value;
     }
     math.import(disabled, { override: true });
   }
@@ -103,8 +154,9 @@ export class MathService {
     precision?: number,
   ): MathResult {
     this.validateInput(expression);
+    const sanitizedScope = scope ? this.sanitizeScope(scope) : undefined;
     const raw = this.runWithTimeout(() =>
-      scope ? this.evaluate(expression, scope) : this.evaluate(expression),
+      sanitizedScope ? this.evaluate(expression, sanitizedScope) : this.evaluate(expression),
     );
     if (typeof raw === 'number' && !Number.isFinite(raw)) {
       throw invalidParams(
@@ -112,7 +164,9 @@ export class MathService {
       );
     }
     const resultType = this.typeOf(raw);
+    this.validateResultType(resultType);
     const result = precision != null ? this.format(raw, { precision }) : this.format(raw);
+    this.validateResultSize(result);
     return { result, resultType };
   }
 
@@ -120,14 +174,18 @@ export class MathService {
   simplifyExpression(expression: string): MathResult {
     this.validateInput(expression);
     const simplified = this.runWithTimeout(() => this.simplify(expression, this.simplifyRules));
-    return { result: simplified.toString(), resultType: 'string' };
+    const result = simplified.toString();
+    this.validateResultSize(result);
+    return { result, resultType: 'string' };
   }
 
   /** Compute the symbolic derivative of an expression with respect to a variable. */
   differentiateExpression(expression: string, variable: string): MathResult {
     this.validateInput(expression);
     const derived = this.runWithTimeout(() => this.derivative(expression, variable));
-    return { result: derived.toString(), resultType: 'string' };
+    const result = derived.toString();
+    this.validateResultSize(result);
+    return { result, resultType: 'string' };
   }
 
   /** Get formatted help content listing available functions, operators, and syntax. */
@@ -144,9 +202,37 @@ export class MathService {
         `Expression exceeds maximum length of ${this.config.maxExpressionLength} characters.`,
       );
     }
-    if (hasTopLevelSemicolon(expression)) {
+    if (hasExpressionSeparator(expression)) {
+      throw invalidParams('Multiple expressions are not allowed. Submit one expression per call.');
+    }
+  }
+
+  /** Reject scope keys that could pollute the object prototype chain. */
+  private sanitizeScope(scope: Record<string, number>): Record<string, number> {
+    for (const key of Object.keys(scope)) {
+      if (BLOCKED_SCOPE_KEYS.has(key)) {
+        throw invalidParams(
+          `Scope key "${key}" is not allowed — it conflicts with a reserved property name.`,
+        );
+      }
+    }
+    return scope;
+  }
+
+  /** Reject result types that leak internals (functions, parsers, multi-expression ResultSets). */
+  private validateResultType(resultType: string): void {
+    if (BLOCKED_RESULT_TYPES.has(resultType)) {
       throw invalidParams(
-        'Multiple expressions (semicolons) are not allowed. Submit one expression per call.',
+        `Expression produced a ${resultType} — only numeric, string, matrix, complex, unit, and boolean results are allowed.`,
+      );
+    }
+  }
+
+  /** Reject results that exceed the configured maximum size. */
+  private validateResultSize(result: string): void {
+    if (result.length > this.config.maxResultLength) {
+      throw invalidParams(
+        `Result exceeds maximum size (${this.config.maxResultLength} characters). Reduce matrix dimensions or simplify the expression.`,
       );
     }
   }
