@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.7 — 2026-03-30
+
+Public hosted instance and distribution metadata.
+
+### Added
+
+- Public hosted server section in README with streamable-http config example (`https://calculator.caseyjhand.com/mcp`)
+- npm and Docker badges in README header
+- `remotes` array in `server.json` with public streamable-http endpoint
+
+### Changed
+
+- Reorganized Getting Started section — "Public Hosted Instance" before "Self-Hosted / Local"
+
 ## 0.1.6 — 2026-03-30
 
 Security hardening: scope sanitization, result type/size validation, newline separator blocking, and prototype pollution prevention.
