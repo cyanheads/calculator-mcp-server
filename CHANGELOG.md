@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.5 — 2026-03-30
+
+Trigonometric simplification rules and stricter non-finite result handling.
+
+### Added
+
+- Trigonometric simplification rules — Pythagorean identities, double-angle identities, and tan/sec/csc/cot relationships applied during `simplify` operations
+- Tests for trig simplification (Pythagorean, double-angle, `1 - sin^2`, `tan^2 + 1`)
+
+### Changed
+
+- Updated `simplify` operation description to mention algebraic and trigonometric identity support
+- Non-finite results (Infinity, NaN) from division (e.g., `1/0`, `0/0`) now throw instead of returning silently — tests updated to expect throws
+
 ## 0.1.4 — 2026-03-30
 
 Dependency update, input validation tightening, and error message improvements.

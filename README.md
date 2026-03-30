@@ -6,7 +6,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.1.4-blue.svg?style=flat-square)](./CHANGELOG.md) [![Framework](https://img.shields.io/badge/Built%20on-@cyanheads/mcp--ts--core-259?style=flat-square)](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-1.28.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-6.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/)
+[![Version](https://img.shields.io/badge/Version-0.1.5-blue.svg?style=flat-square)](./CHANGELOG.md) [![Framework](https://img.shields.io/badge/Built%20on-@cyanheads/mcp--ts--core-259?style=flat-square)](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-1.28.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-6.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/)
 
 </div>
 
@@ -25,7 +25,7 @@ One tool for all mathematical operations:
 A single tool covering 100% of the server's purpose. The `operation` parameter defaults to `evaluate`, so the common case is just `{ expression: "..." }`.
 
 - **Evaluate** — arithmetic, trigonometry, logarithms, statistics, matrices, complex numbers, unit conversion, combinatorics
-- **Simplify** — reduce algebraic expressions symbolically (e.g., `2x + 3x` -> `5 * x`)
+- **Simplify** — reduce algebraic expressions symbolically (e.g., `2x + 3x` -> `5 * x`). Supports algebraic and trigonometric identities
 - **Derivative** — compute symbolic derivatives (e.g., `3x^2 + 2x + 1` -> `6 * x + 2`)
 - Variable scope via `scope` parameter: `{ "x": 5, "y": 3 }`
 - Configurable precision for numeric results
