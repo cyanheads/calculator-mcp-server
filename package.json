@@ -1,7 +1,7 @@
 {
   "name": "@cyanheads/calculator-mcp-server",
   "version": "0.1.6",
-  "description": "A calculator MCP server that lets any LLM verify mathematical computations. Evaluate, simplify, and differentiate expressions via a single tool. Powered by math.js v15.",
+  "description": "Calculator MCP server — evaluate, simplify, and differentiate math expressions.",
   "mcpName": "io.github.cyanheads/calculator-mcp-server",
   "type": "module",
   "main": "dist/index.js",
