@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.cyanheads/calculator-mcp-server",
-  "description": "Calculator MCP server — evaluate, simplify, and differentiate math expressions. Powered by math.js v15.",
+  "description": "Calculator MCP server — evaluate, simplify, and differentiate math expressions.",
   "repository": {
     "url": "https://github.com/cyanheads/calculator-mcp-server",
     "source": "github"
