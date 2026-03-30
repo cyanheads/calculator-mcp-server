@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.6 — 2026-03-30
+
+Security hardening: scope sanitization, result type/size validation, newline separator blocking, and prototype pollution prevention.
+
+### Added
+
+- `CALC_MAX_RESULT_LENGTH` env var — configurable maximum result string length (default 100,000 characters)
+- Blocked result types (`function`, `Function`, `ResultSet`, `Parser`) — prevents leaking internal source code or multi-expression bypass
+- Blocked scope keys — rejects prototype-polluting keys (`__proto__`, `constructor`, `prototype`, etc.) in variable scope
+- Result size validation on all output paths (evaluate, simplify, derivative)
+- Redacted `version` constant in expression scope — prevents math.js version fingerprinting
+- `parser` added to disabled functions list
+
+### Changed
+
+- Upgraded `@cyanheads/mcp-ts-core` from `^0.2.9` to `^0.2.10`
+- Renamed `hasTopLevelSemicolon` → `hasExpressionSeparator` — now also blocks newline (`\n`, `\r`) expression separators
+- Added `.max(50)` and alphanumeric regex validation to `variable` input parameter
+- Added `.int()`, `.min()`, `.max()` constraints to `maxExpressionLength` and `evaluationTimeoutMs` config fields
+- Updated error message for multi-expression rejection to cover newlines
+
 ## 0.1.5 — 2026-03-30
 
 Trigonometric simplification rules and stricter non-finite result handling.

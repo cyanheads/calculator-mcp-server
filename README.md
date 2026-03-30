@@ -6,7 +6,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.1.5-blue.svg?style=flat-square)](./CHANGELOG.md) [![Framework](https://img.shields.io/badge/Built%20on-@cyanheads/mcp--ts--core-259?style=flat-square)](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-1.28.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-6.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/)
+[![Version](https://img.shields.io/badge/Version-0.1.6-blue.svg?style=flat-square)](./CHANGELOG.md) [![Framework](https://img.shields.io/badge/Built%20on-@cyanheads/mcp--ts--core-259?style=flat-square)](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-1.28.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-6.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/)
 
 </div>
 
@@ -53,8 +53,9 @@ Calculator-specific:
 
 - Hardened math.js v15 instance — dangerous functions disabled, evaluation sandboxed via `vm.runInNewContext()` with timeout
 - No auth required — all operations are read-only and stateless
-- Input length limits and semicolon rejection to prevent abuse
-- Numeric-only variable scope (no strings, objects, or functions can be injected)
+- Input validation: expression length limits, expression separator rejection (semicolons and newlines), variable name regex enforcement
+- Result validation: blocked result types (functions, parsers, result sets), configurable max result size
+- Scope sanitization: numeric-only values, prototype pollution prevention (blocked `__proto__`, `constructor`, etc.)
 
 ---
 
@@ -103,8 +104,9 @@ bun install
 
 | Variable | Description | Default |
 |:---------|:------------|:--------|
-| `CALC_MAX_EXPRESSION_LENGTH` | Maximum allowed expression string length. | `1000` |
-| `CALC_EVALUATION_TIMEOUT_MS` | Maximum evaluation time in milliseconds. | `5000` |
+| `CALC_MAX_EXPRESSION_LENGTH` | Maximum allowed expression string length (10–10,000). | `1000` |
+| `CALC_EVALUATION_TIMEOUT_MS` | Maximum evaluation time in milliseconds (100–30,000). | `5000` |
+| `CALC_MAX_RESULT_LENGTH` | Maximum result string length in characters (1,000–1,000,000). | `100000` |
 | `MCP_TRANSPORT_TYPE` | Transport: `stdio` or `http`. | `stdio` |
 | `MCP_HTTP_PORT` | Port for HTTP server. | `3010` |
 | `MCP_AUTH_MODE` | Auth mode: `none`, `jwt`, or `oauth`. | `none` |
@@ -145,7 +147,7 @@ docker run -p 3010:3010 calculator-mcp-server
 | `src/mcp-server/resources/` | Resource definitions (`*.resource.ts`). |
 | `src/services/` | Domain service integrations (MathService). |
 | `src/config/` | Environment variable parsing and validation with Zod. |
-| `docs/` | Design doc and generated directory tree. |
+| `docs/` | Generated directory tree. |
 
 ---
 

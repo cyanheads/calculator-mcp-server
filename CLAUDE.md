@@ -1,12 +1,10 @@
 # Agent Protocol
 
 **Server:** calculator-mcp-server
-**Version:** 0.1.5
+**Version:** 0.1.6
 **Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
 
 > **Read the framework docs first:** `node_modules/@cyanheads/mcp-ts-core/CLAUDE.md` contains the full API reference — builders, Context, error codes, exports, patterns. This file covers server-specific conventions only.
->
-> **Design doc:** `docs/design.md` contains the full design rationale, error tables, workflow examples, and known limitations.
 
 A publicly-hosted calculator MCP server that lets any LLM verify mathematical computations. Powered by [math.js](https://mathjs.org/) v15. No auth required — all operations are read-only and stateless.
 
@@ -19,7 +17,7 @@ A publicly-hosted calculator MCP server that lets any LLM verify mathematical co
 
 ### Security Model
 
-MathService wraps a **hardened math.js instance** — dangerous functions (`import`, `createUnit`, `evaluate`, `parse`, `compile`, `chain`, `config`, `resolve`, `reviver`) are disabled in the expression scope. `simplify` and `derivative` are also disabled in expressions but called programmatically by the tool handler. Evaluation runs inside `vm.runInNewContext()` with a timeout. Input length is capped. Semicolons are rejected (single expression per call only). Variable scope accepts `z.record(z.number())` only — no strings, objects, or functions can be injected.
+MathService wraps a **hardened math.js instance** — dangerous functions (`import`, `createUnit`, `evaluate`, `parse`, `compile`, `chain`, `config`, `resolve`, `reviver`, `parser`) are disabled in the expression scope. `simplify` and `derivative` are also disabled in expressions but called programmatically by the tool handler. Evaluation runs inside `vm.runInNewContext()` with a timeout. Input length is capped. Expression separators (semicolons and newlines) are rejected — single expression per call only. Variable scope accepts `z.record(z.number())` only with prototype-polluting keys blocked. Result types are validated (functions, parsers, and result sets rejected). Result size is capped via `CALC_MAX_RESULT_LENGTH`. The math.js `version` constant is redacted to prevent fingerprinting.
 
 ---
 
@@ -118,16 +116,19 @@ export const helpResource = resource('calculator://help', {
 ```ts
 // src/config/server-config.ts — lazy-parsed, separate from framework config
 const ServerConfigSchema = z.object({
-  maxExpressionLength: z.coerce.number().default(1000)
-    .describe('Maximum allowed expression string length'),
-  evaluationTimeoutMs: z.coerce.number().default(5000)
-    .describe('Maximum evaluation time in milliseconds'),
+  maxExpressionLength: z.coerce.number().int().min(10).max(10_000).default(1000)
+    .describe('Maximum allowed expression string length (10–10,000)'),
+  evaluationTimeoutMs: z.coerce.number().int().min(100).max(30_000).default(5000)
+    .describe('Maximum evaluation time in milliseconds (100–30,000)'),
+  maxResultLength: z.coerce.number().int().min(1_000).max(1_000_000).default(100_000)
+    .describe('Maximum result string length in characters (1,000–1,000,000)'),
 });
 let _config: z.infer<typeof ServerConfigSchema> | undefined;
 export function getServerConfig() {
   _config ??= ServerConfigSchema.parse({
     maxExpressionLength: process.env.CALC_MAX_EXPRESSION_LENGTH,
     evaluationTimeoutMs: process.env.CALC_EVALUATION_TIMEOUT_MS,
+    maxResultLength: process.env.CALC_MAX_RESULT_LENGTH,
   });
   return _config;
 }
@@ -137,6 +138,7 @@ export function getServerConfig() {
 |:--------|:--------|:------------|
 | `CALC_MAX_EXPRESSION_LENGTH` | `1000` | Max input string length |
 | `CALC_EVALUATION_TIMEOUT_MS` | `5000` | Evaluation timeout in ms |
+| `CALC_MAX_RESULT_LENGTH` | `100000` | Max result string length |
 
 ---
 
