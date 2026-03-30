@@ -53,10 +53,10 @@ export const calculateTool = tool('calculate', {
       .number()
       .int()
       .min(1)
-      .max(64)
+      .max(16)
       .optional()
       .describe(
-        'Significant digits (1\u201364) for numeric results. Omit for full precision. Ignored for symbolic operations (simplify, derivative).',
+        'Significant digits (1\u201316) for numeric results. Omit for full precision. Ignored for symbolic operations (simplify, derivative).',
       ),
   }),
   output: z.object({
@@ -64,7 +64,7 @@ export const calculateTool = tool('calculate', {
     resultType: z
       .string()
       .describe(
-        'Type of result: number, BigNumber, Complex, Matrix, Unit, string, boolean. Symbolic operations return "string".',
+        'Type of result as reported by math.js: number, BigNumber, Complex, DenseMatrix, Unit, string, boolean. Symbolic operations return "string".',
       ),
     expression: z.string().describe('The original expression as received.'),
   }),

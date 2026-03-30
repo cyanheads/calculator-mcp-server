@@ -81,6 +81,11 @@ export class MathService {
     const raw = this.runWithTimeout(() =>
       scope ? this.evaluate(expression, scope) : this.evaluate(expression),
     );
+    if (typeof raw === 'number' && !Number.isFinite(raw)) {
+      throw invalidParams(
+        `Expression evaluated to ${raw} — this typically means the operation is mathematically undefined (e.g., division by zero, log of zero). Check the expression.`,
+      );
+    }
     const resultType = this.typeOf(raw);
     const result = precision != null ? this.format(raw, { precision }) : this.format(raw);
     return { result, resultType };
@@ -134,8 +139,9 @@ export class MathService {
           `Expression evaluation timed out after ${this.config.evaluationTimeoutMs / 1000} seconds. Simplify the expression or reduce matrix dimensions.`,
         );
       }
-      // Math.js errors (syntax, unknown function, dimension mismatch) → InvalidParams
-      throw invalidParams(err instanceof Error ? err.message : String(err));
+      // All non-timeout errors from the VM are expression-related
+      const message = err instanceof Error ? err.message : String(err);
+      throw invalidParams(`Invalid expression: ${message}`);
     }
   }
 }
@@ -247,7 +253,7 @@ Expression: \`x^2 + y\` => 28
 > **Note:** Unit conversions use IEEE 754 floating-point arithmetic. Results may include minor rounding artifacts (e.g., 211.99999999999997 instead of 212). Use the \`precision\` parameter to round.
 
 ### Precision
-Use the precision parameter (1\u201364 significant digits) for numeric results.
+Use the precision parameter (1\u201316 significant digits) for numeric results.
 
 ### Operations
 - **evaluate** (default): Compute a numeric result
