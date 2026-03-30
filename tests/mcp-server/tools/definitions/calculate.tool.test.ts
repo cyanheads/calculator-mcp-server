@@ -69,14 +69,16 @@ describe('calculate tool', () => {
       expect(result.result).toBe('0.3333');
     });
 
-    it('returns Infinity for 1/0', async () => {
-      const result = await call({ expression: '1 / 0' });
-      expect(result.result).toBe('Infinity');
+    it('throws for 1/0 (Infinity)', () => {
+      expect(() =>
+        calculateTool.handler(parse({ expression: '1 / 0' }), createMockContext()),
+      ).toThrow('mathematically undefined');
     });
 
-    it('returns NaN for 0/0', async () => {
-      const result = await call({ expression: '0 / 0' });
-      expect(result.result).toBe('NaN');
+    it('throws for 0/0 (NaN)', () => {
+      expect(() =>
+        calculateTool.handler(parse({ expression: '0 / 0' }), createMockContext()),
+      ).toThrow('mathematically undefined');
     });
   });
 
@@ -93,6 +95,26 @@ describe('calculate tool', () => {
     it('simplifies polynomial expressions', async () => {
       const result = await call({ expression: '2x + 3x + x^2 - x^2', operation: 'simplify' });
       expect(result.result).toBe('5 * x');
+    });
+
+    it('applies Pythagorean identity', async () => {
+      const result = await call({ expression: 'sin(x)^2 + cos(x)^2', operation: 'simplify' });
+      expect(result.result).toBe('1');
+    });
+
+    it('simplifies 1 - sin^2 to cos^2', async () => {
+      const result = await call({ expression: '1 - sin(x)^2', operation: 'simplify' });
+      expect(result.result).toBe('cos(x) ^ 2');
+    });
+
+    it('simplifies double-angle identity', async () => {
+      const result = await call({ expression: '2 * sin(x) * cos(x)', operation: 'simplify' });
+      expect(result.result).toBe('sin(2 * x)');
+    });
+
+    it('simplifies tan^2 + 1 to sec^2', async () => {
+      const result = await call({ expression: 'tan(x)^2 + 1', operation: 'simplify' });
+      expect(result.result).toBe('sec(x) ^ 2');
     });
   });
 
