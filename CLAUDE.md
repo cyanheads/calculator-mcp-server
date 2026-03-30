@@ -1,7 +1,7 @@
 # Agent Protocol
 
 **Server:** calculator-mcp-server
-**Version:** 0.1.3
+**Version:** 0.1.4
 **Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
 
 > **Read the framework docs first:** `node_modules/@cyanheads/mcp-ts-core/CLAUDE.md` contains the full API reference — builders, Context, error codes, exports, patterns. This file covers server-specific conventions only.
@@ -73,12 +73,12 @@ export const calculateTool = tool('calculate', {
       .describe('Variable for differentiation. Required when operation is "derivative".'),
     scope: z.record(z.number()).optional()
       .describe('Variable assignments. Example: { "x": 5, "y": 3 }.'),
-    precision: z.number().int().min(0).max(64).optional()
+    precision: z.number().int().min(1).max(16).optional()
       .describe('Significant digits for numeric results. Ignored for symbolic operations.'),
   }),
   output: z.object({
     result: z.string().describe('Computed result as a string.'),
-    resultType: z.string().describe('Type: number, BigNumber, Complex, Matrix, Unit, string, boolean.'),
+    resultType: z.string().describe('Type: number, BigNumber, Complex, DenseMatrix, Unit, string, boolean.'),
     expression: z.string().describe('Original expression as received.'),
   }),
 

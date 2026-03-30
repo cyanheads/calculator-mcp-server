@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.4 — 2026-03-30
+
+Dependency update, input validation tightening, and error message improvements.
+
+### Changed
+
+- Upgraded `@cyanheads/mcp-ts-core` from `^0.2.8` to `^0.2.9`
+- Reduced max `precision` parameter from 64 to 16 significant digits
+- Updated `resultType` output description to use `DenseMatrix` (matching math.js actual type name)
+- Added guard for non-finite evaluation results (Infinity, NaN) — now throws `InvalidParams` with an actionable message
+- Improved error messages for expression evaluation failures with `Invalid expression:` prefix
+- Removed explicit `list` callback from `calculator://help` resource (framework handles resource listing)
+- Aligned `server.json` description with README tagline
+- Removed "STDIO & Streamable HTTP" from README tagline
+
 ## 0.1.3 — 2026-03-29
 
 Input validation hardening, resource listing support, and documentation updates.
