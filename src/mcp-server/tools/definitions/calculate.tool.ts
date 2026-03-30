@@ -34,7 +34,7 @@ export const calculateTool = tool('calculate', {
       .describe(
         'Operation to perform. ' +
           '"evaluate" computes a numeric result (default). ' +
-          '"simplify" reduces an algebraic expression symbolically (e.g., "2x + 3x" -> "5 * x"). ' +
+          '"simplify" reduces an algebraic expression symbolically (e.g., "2x + 3x" -> "5 * x"). Supports algebraic and trigonometric identities. ' +
           '"derivative" computes the symbolic derivative (requires variable parameter).',
       ),
     variable: z

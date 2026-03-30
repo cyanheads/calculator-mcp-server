@@ -7,9 +7,32 @@
 
 import vm from 'node:vm';
 import { invalidParams, serviceUnavailable } from '@cyanheads/mcp-ts-core/errors';
-import { all, create } from 'mathjs';
+import { all, create, type SimplifyRule } from 'mathjs';
 import type { ServerConfig } from '@/config/server-config.js';
 import type { MathResult } from './types.js';
+
+/**
+ * Custom simplification rules extending math.js defaults.
+ * math.js ships with algebraic rules only — these add common trig identities.
+ * The `n` wildcard matches any sub-expression (e.g., sin(2x+1)^2).
+ */
+const TRIG_SIMPLIFY_RULES: SimplifyRule[] = [
+  // Pythagorean identities
+  'sin(n)^2 + cos(n)^2 -> 1',
+  'cos(n)^2 + sin(n)^2 -> 1',
+  '1 - sin(n)^2 -> cos(n)^2',
+  '1 - cos(n)^2 -> sin(n)^2',
+  // tan / sec / csc / cot relationships
+  'tan(n)^2 + 1 -> sec(n)^2',
+  '1 + tan(n)^2 -> sec(n)^2',
+  'sec(n)^2 - 1 -> tan(n)^2',
+  '1 + cot(n)^2 -> csc(n)^2',
+  'cot(n)^2 + 1 -> csc(n)^2',
+  'csc(n)^2 - 1 -> cot(n)^2',
+  // Double-angle identities
+  '2 * sin(n) * cos(n) -> sin(2 * n)',
+  'cos(n)^2 - sin(n)^2 -> cos(2 * n)',
+];
 
 /**
  * Functions disabled in the expression scope for security.
@@ -43,8 +66,9 @@ function hasTopLevelSemicolon(expr: string): boolean {
 
 export class MathService {
   private readonly evaluate: (expr: string, scope?: Record<string, number>) => unknown;
-  private readonly simplify: (expr: string) => { toString(): string };
+  private readonly simplify: (expr: string, rules?: SimplifyRule[]) => { toString(): string };
   private readonly derivative: (expr: string, variable: string) => { toString(): string };
+  private readonly simplifyRules: SimplifyRule[];
   private readonly format: (value: unknown, options?: { precision?: number }) => string;
   private readonly typeOf: (value: unknown) => string;
   private readonly config: ServerConfig;
@@ -58,6 +82,7 @@ export class MathService {
     this.evaluate = math.evaluate.bind(math);
     this.simplify = math.simplify.bind(math);
     this.derivative = math.derivative.bind(math);
+    this.simplifyRules = [...math.simplify.rules, ...TRIG_SIMPLIFY_RULES];
     this.format = math.format.bind(math);
     this.typeOf = math.typeOf.bind(math);
 
@@ -94,7 +119,7 @@ export class MathService {
   /** Simplify an algebraic expression symbolically. */
   simplifyExpression(expression: string): MathResult {
     this.validateInput(expression);
-    const simplified = this.runWithTimeout(() => this.simplify(expression));
+    const simplified = this.runWithTimeout(() => this.simplify(expression, this.simplifyRules));
     return { result: simplified.toString(), resultType: 'string' };
   }
 
@@ -257,6 +282,6 @@ Use the precision parameter (1\u201316 significant digits) for numeric results.
 
 ### Operations
 - **evaluate** (default): Compute a numeric result
-- **simplify**: Reduce algebraic expressions symbolically (e.g., "2x + 3x" => "5 * x")
+- **simplify**: Reduce algebraic expressions symbolically (e.g., "2x + 3x" => "5 * x", "sin(x)^2 + cos(x)^2" => 1). Supports algebraic rules and common trigonometric identities (Pythagorean, double-angle, tan/sec/csc/cot relationships).
 - **derivative**: Compute symbolic derivative (requires variable parameter, e.g., variable: "x")
 `;
