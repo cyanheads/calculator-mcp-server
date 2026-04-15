@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.1.9 — 2026-04-14
+
+Dependency refresh, form-client input normalization, and metadata updates.
+
+### Added
+
+- `AGENTS.md` to the published package file list
+- `skills/add-app-tool/` from the latest `@cyanheads/mcp-ts-core` skill sync
+
+### Changed
+
+- Upgraded `@cyanheads/mcp-ts-core` from `^0.2.10` to `^0.3.5`
+- Upgraded `mathjs` from `^15.1.1` to `^15.2.0`
+- Upgraded `@biomejs/biome` from `^2.4.10` to `^2.4.12`, `@types/node` from `^25.5.0` to `^25.6.0`, and `vitest` from `^4.1.2` to `^4.1.4`
+- Synced project skills with the newer framework skill set
+- Normalized blank optional `variable` and `precision` inputs from form-based MCP clients so they are treated as omitted
+- Removed the `calculator://help` reference from the `calculate` tool description and rewrote schema descriptions as single strings without `+` concatenation
+- Regenerated `bun.lock` and `docs/tree.md`
+- Bumped package, server metadata, README badge, and agent protocol files to `0.1.9`
+
+### Fixed
+
+- Cleared `bun audit` warnings by regenerating the lockfile against the updated dependency graph
+
 ## 0.1.8 — 2026-03-30
 
 Package metadata and dev dependency updates.

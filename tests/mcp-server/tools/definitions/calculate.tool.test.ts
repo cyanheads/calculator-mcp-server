@@ -69,6 +69,16 @@ describe('calculate tool', () => {
       expect(result.result).toBe('0.3333');
     });
 
+    it('ignores blank precision values from form-based clients', async () => {
+      const result = await call({ expression: '1 / 3', precision: '' });
+      expect(result.result).toBe('0.3333333333333333');
+    });
+
+    it('ignores blank variable values for non-derivative operations', async () => {
+      const result = await call({ expression: '2 + 2', operation: 'evaluate', variable: '' });
+      expect(result).toEqual({ result: '4', resultType: 'number', expression: '2 + 2' });
+    });
+
     it('throws for 1/0 (Infinity)', () => {
       expect(() =>
         calculateTool.handler(parse({ expression: '1 / 0' }), createMockContext()),
@@ -137,6 +147,15 @@ describe('calculate tool', () => {
         ),
       ).toThrow("The 'variable' parameter is required");
     });
+
+    it('treats blank variable values as missing for derivative operations', () => {
+      expect(() =>
+        calculateTool.handler(
+          parse({ expression: 'x^2', operation: 'derivative', variable: '' }),
+          createMockContext(),
+        ),
+      ).toThrow("The 'variable' parameter is required");
+    });
   });
 
   describe('error handling', () => {
@@ -147,10 +166,10 @@ describe('calculate tool', () => {
       ).toThrow('exceeds maximum length');
     });
 
-    it('rejects semicolons', () => {
+    it('rejects multiple expressions separated by semicolons', () => {
       expect(() =>
         calculateTool.handler(parse({ expression: '1 + 2; 3 + 4' }), createMockContext()),
-      ).toThrow('semicolons');
+      ).toThrow('Multiple expressions are not allowed');
     });
 
     it('rejects invalid syntax', () => {

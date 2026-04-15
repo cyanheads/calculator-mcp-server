@@ -1,9 +1,10 @@
 # calculator-mcp-server - Directory Structure
 
-Generated on: 2026-03-29 02:45:13
+Generated on: 2026-04-15 03:52:10
 
 ```text
 calculator-mcp-server/
+├── .agents/
 ├── .claude/
 ├── .github/
 │   └── ISSUE_TEMPLATE/
@@ -15,7 +16,6 @@ calculator-mcp-server/
 │   └── settings.json
 ├── claude-plans/
 ├── docs/
-│   └── design.md
 ├── scripts/
 │   ├── build.ts
 │   ├── clean.ts
@@ -23,6 +23,8 @@ calculator-mcp-server/
 │   ├── lint-mcp.ts
 │   └── tree.ts
 ├── skills/
+│   ├── add-app-tool/
+│   │   └── SKILL.md
 │   ├── add-prompt/
 │   │   └── SKILL.md
 │   ├── add-resource/
@@ -103,6 +105,7 @@ calculator-mcp-server/
 ├── .dockerignore
 ├── .env.example
 ├── .gitignore
+├── AGENTS.md
 ├── biome.json
 ├── bun.lock
 ├── bunfig.toml

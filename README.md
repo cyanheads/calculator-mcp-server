@@ -8,7 +8,7 @@
 
 [![npm](https://img.shields.io/npm/v/@cyanheads/calculator-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/calculator-mcp-server)
 [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/calculator-mcp-server)
-[![Version](https://img.shields.io/badge/Version-0.1.8-blue.svg?style=flat-square)](./CHANGELOG.md) [![Framework](https://img.shields.io/badge/Built%20on-@cyanheads/mcp--ts--core-259?style=flat-square)](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
+[![Version](https://img.shields.io/badge/Version-0.1.9-blue.svg?style=flat-square)](./CHANGELOG.md) [![Framework](https://img.shields.io/badge/Built%20on-@cyanheads/mcp--ts--core-259?style=flat-square)](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
 
 [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-1.28.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-6.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/)
 
@@ -39,6 +39,7 @@ A single tool covering 100% of the server's purpose. The `operation` parameter d
 - **Derivative** — compute symbolic derivatives (e.g., `3x^2 + 2x + 1` -> `6 * x + 2`)
 - Variable scope via `scope` parameter: `{ "x": 5, "y": 3 }`
 - Configurable precision for numeric results
+- Blank optional `variable` and `precision` values from form-based MCP clients are treated as omitted
 
 ---
 
@@ -178,7 +179,7 @@ docker run -p 3010:3010 calculator-mcp-server
 
 ## Development Guide
 
-See [`CLAUDE.md`](./CLAUDE.md) for development guidelines and architectural rules. The short version:
+See [`AGENTS.md`](./AGENTS.md) or [`CLAUDE.md`](./CLAUDE.md) for development guidelines and architectural rules. The short version:
 
 - Handlers throw, framework catches — no `try/catch` in tool logic
 - Use `ctx.log` for logging

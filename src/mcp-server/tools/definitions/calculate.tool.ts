@@ -10,9 +10,7 @@ import { getMathService } from '@/services/math/math-service.js';
 
 export const calculateTool = tool('calculate', {
   description:
-    'Evaluate math expressions, simplify algebraic expressions, or compute symbolic derivatives. ' +
-    'Supports arithmetic, trigonometry, statistics, matrices, complex numbers, units, and combinatorics. ' +
-    'Powered by math.js — use calculator://help for the full function reference.',
+    'Evaluate math expressions, simplify algebraic expressions, or compute symbolic derivatives. Supports arithmetic, trigonometry, statistics, matrices, complex numbers, units, and combinatorics.',
   annotations: {
     readOnlyHint: true,
     idempotentHint: true,
@@ -23,27 +21,28 @@ export const calculateTool = tool('calculate', {
       .string()
       .min(1)
       .describe(
-        'Mathematical expression to evaluate. Supports standard notation: ' +
-          'arithmetic (+, -, *, /, ^, %), functions (sin, cos, sqrt, log, abs, round, etc.), ' +
-          'constants (pi, e, phi, i), matrices ([1, 2; 3, 4]), units (5 kg to lbs), ' +
-          'and variables (when scope is provided).',
+        'Mathematical expression to evaluate. Supports standard notation: arithmetic (+, -, *, /, ^, %), functions (sin, cos, sqrt, log, abs, round, etc.), constants (pi, e, phi, i), matrices ([1, 2; 3, 4]), units (5 kg to lbs), and variables (when scope is provided).',
       ),
     operation: z
       .enum(['evaluate', 'simplify', 'derivative'])
       .default('evaluate')
       .describe(
-        'Operation to perform. ' +
-          '"evaluate" computes a numeric result (default). ' +
-          '"simplify" reduces an algebraic expression symbolically (e.g., "2x + 3x" -> "5 * x"). Supports algebraic and trigonometric identities. ' +
-          '"derivative" computes the symbolic derivative (requires variable parameter).',
+        'Operation to perform. "evaluate" computes a numeric result (default). "simplify" reduces an algebraic expression symbolically (e.g., "2x + 3x" -> "5 * x"). Supports algebraic and trigonometric identities. "derivative" computes the symbolic derivative (requires the variable parameter).',
       ),
     variable: z
-      .string()
-      .max(50)
-      .regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/, 'Variable name must be alphanumeric (a-z, A-Z, 0-9, _).')
+      .union([
+        z.literal(''),
+        z
+          .string()
+          .max(50)
+          .regex(
+            /^[a-zA-Z_][a-zA-Z0-9_]*$/,
+            'Variable name must be alphanumeric (a-z, A-Z, 0-9, _).',
+          ),
+      ])
       .optional()
       .describe(
-        'Variable to differentiate with respect to. Required when operation is "derivative". Example: "x".',
+        'Variable to differentiate with respect to. Required when operation is "derivative". Blank values from form-based clients are treated as omitted. Example: "x".',
       ),
     scope: z
       .record(z.string(), z.number())
@@ -52,13 +51,10 @@ export const calculateTool = tool('calculate', {
         'Variable assignments for the expression. Example: { "x": 5, "y": 3 } makes "x + y" evaluate to 8.',
       ),
     precision: z
-      .number()
-      .int()
-      .min(1)
-      .max(16)
+      .union([z.literal(''), z.number().int().min(1).max(16)])
       .optional()
       .describe(
-        'Significant digits (1\u201316) for numeric results. Omit for full precision. Ignored for symbolic operations (simplify, derivative).',
+        'Significant digits (1–16) for numeric results. Omit for full precision. Blank values from form-based clients are treated as omitted. Ignored for symbolic operations (simplify, derivative).',
       ),
   }),
   output: z.object({
@@ -73,13 +69,15 @@ export const calculateTool = tool('calculate', {
 
   handler(input, ctx) {
     const math = getMathService();
+    const variable = input.variable || undefined;
+    const precision = typeof input.precision === 'number' ? input.precision : undefined;
 
     switch (input.operation) {
       case 'evaluate': {
         const { result, resultType } = math.evaluateExpression(
           input.expression,
           input.scope,
-          input.precision,
+          precision,
         );
         ctx.log.info('Evaluated expression', { expression: input.expression });
         return { result, resultType, expression: input.expression };
@@ -90,18 +88,15 @@ export const calculateTool = tool('calculate', {
         return { result, resultType, expression: input.expression };
       }
       case 'derivative': {
-        if (!input.variable) {
+        if (!variable) {
           throw invalidParams(
             "The 'variable' parameter is required when operation is 'derivative'.",
           );
         }
-        const { result, resultType } = math.differentiateExpression(
-          input.expression,
-          input.variable,
-        );
+        const { result, resultType } = math.differentiateExpression(input.expression, variable);
         ctx.log.info('Differentiated expression', {
           expression: input.expression,
-          variable: input.variable,
+          variable,
         });
         return { result, resultType, expression: input.expression };
       }
