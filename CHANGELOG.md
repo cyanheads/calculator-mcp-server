@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.10 — 2026-04-20
+
+Framework bump to `@cyanheads/mcp-ts-core` 0.5.3, `parseEnvConfig` adoption, and skill sync.
+
+### Added
+
+- Adopted `parseEnvConfig` in `src/config/server-config.ts` — validation errors now name the actual env var (`CALC_MAX_EXPRESSION_LENGTH`) instead of the internal Zod path
+
+### Changed
+
+- Upgraded `@cyanheads/mcp-ts-core` from `^0.3.5` to `^0.5.3` (spans 9 tags — new `parseEnvConfig` helper, format-parity linter rule with sentinel injection, devcheck CLAUDE.md/AGENTS.md sync check, Vitest 4 projects pattern, and multiple fixes)
+- Upgraded `typescript` from `^6.0.2` to `^6.0.3`
+- Synced seven external skills from the package (`add-tool`, `api-config`, `design-mcp-server`, `field-test`, `maintenance`, `polish-docs-meta`, `setup`) and mirrored all skills into `.claude/skills/`
+- Regenerated `bun.lock` from a clean state
+- Bumped package, server metadata, README badge, and agent protocol files to `0.1.10`
+
+### Fixed
+
+- Cleared the transitive hono moderate-severity advisory (GHSA-458j-xx4x-4375) via fresh lockfile resolution
+
 ## 0.1.9 — 2026-04-14
 
 Dependency refresh, form-client input normalization, and metadata updates.
