@@ -4,6 +4,7 @@
  */
 
 import { z } from '@cyanheads/mcp-ts-core';
+import { parseEnvConfig } from '@cyanheads/mcp-ts-core/config';
 
 const ServerConfigSchema = z.object({
   maxExpressionLength: z.coerce
@@ -35,10 +36,10 @@ let _config: ServerConfig | undefined;
 
 /** Lazy-parsed server config from env vars. */
 export function getServerConfig(): ServerConfig {
-  _config ??= ServerConfigSchema.parse({
-    maxExpressionLength: process.env.CALC_MAX_EXPRESSION_LENGTH,
-    evaluationTimeoutMs: process.env.CALC_EVALUATION_TIMEOUT_MS,
-    maxResultLength: process.env.CALC_MAX_RESULT_LENGTH,
+  _config ??= parseEnvConfig(ServerConfigSchema, {
+    maxExpressionLength: 'CALC_MAX_EXPRESSION_LENGTH',
+    evaluationTimeoutMs: 'CALC_EVALUATION_TIMEOUT_MS',
+    maxResultLength: 'CALC_MAX_RESULT_LENGTH',
   });
   return _config;
 }
