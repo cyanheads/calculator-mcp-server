@@ -1,5 +1,5 @@
 name: Feature Request
-description: Suggest a new feature or improvement for calculator-mcp-server
+description: Suggest a new feature or improvement for @cyanheads/calculator-mcp-server
 labels: ["enhancement"]
 body:
   - type: textarea

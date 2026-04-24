@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.1.11 — 2026-04-24
+
+Framework bump to `@cyanheads/mcp-ts-core` 0.7.0, handler simplification, and skill sync.
+
+### Added
+
+- Three new external skills from the framework: `api-linter` (rule reference), `release-and-publish` (post-wrapup publish workflow), and `security-pass` (8-axis MCP-specific audit)
+- Three framework scripts newly synced into `scripts/`: `build-changelog.ts`, `check-docs-sync.ts`, `check-skills-sync.ts` (per the `maintenance` skill's new Phase C)
+
+### Changed
+
+- Upgraded `@cyanheads/mcp-ts-core` from `^0.5.3` to `^0.7.0` (spans 18 tags — landing page at `/`, SEP-1649 Server Card, directory-based changelog system, recursive `describe-on-fields` linter, flattened ZodError messages with structured `data.issues`, `MCP_PUBLIC_URL` TLS-proxy override, per-request HTTP close race fix, `HtmlExtractor` utility, and the new skills above)
+- Upgraded `@biomejs/biome` from `^2.4.12` to `^2.4.13` (patch) and `vitest` from `^4.1.4` to `^4.1.5` (patch)
+- Resynced 15 external skills to match framework 0.7.0 versions (`add-tool` 1.6→1.8, `design-mcp-server` 2.4→2.7, `field-test` 1.2→2.0, `polish-docs-meta` 1.4→1.7, `setup` 1.3→1.5, `maintenance` 1.3→1.5, and nine others)
+- Resynced `scripts/devcheck.ts` and `scripts/tree.ts` from the framework (devcheck now runs Docs Sync, Skills Sync, and Changelog Sync steps)
+- Simplified the `calculate` tool handler — destructured `input` once, spread `MathResult` into the return, dropped per-case block scopes; ~40% fewer lines, same 27/27 tests passing
+- Agent protocol (`CLAUDE.md` / `AGENTS.md`): added `security-pass` and `release-and-publish` to the What's Next? progression, added `api-linter` / `security-pass` / `release-and-publish` to the skills table, rewrote the Publishing section to point at the `release-and-publish` skill
+- `.github/ISSUE_TEMPLATE/` descriptions now use the scoped package name (`@cyanheads/calculator-mcp-server`) for consistency
+- Bumped package, server metadata, README badge, and agent protocol files to `0.1.11`
+
+### Fixed
+
+- Added `.describe()` to each variant of the `variable` and `precision` unions in the `calculate` input schema — the 0.6.16 framework bump extended `describe-on-fields` to recurse into union options, which flagged the previously-bare `z.literal('')` and sibling variants
+
 ## 0.1.10 — 2026-04-20
 
 Framework bump to `@cyanheads/mcp-ts-core` 0.5.3, `parseEnvConfig` adoption, and skill sync.

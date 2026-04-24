@@ -1,6 +1,6 @@
 # calculator-mcp-server - Directory Structure
 
-Generated on: 2026-04-15 03:52:10
+Generated on: 2026-04-24 20:40:02
 
 ```text
 calculator-mcp-server/
@@ -17,7 +17,10 @@ calculator-mcp-server/
 ├── claude-plans/
 ├── docs/
 ├── scripts/
+│   ├── build-changelog.ts
 │   ├── build.ts
+│   ├── check-docs-sync.ts
+│   ├── check-skills-sync.ts
 │   ├── clean.ts
 │   ├── devcheck.ts
 │   ├── lint-mcp.ts
@@ -42,6 +45,8 @@ calculator-mcp-server/
 │   ├── api-context/
 │   │   └── SKILL.md
 │   ├── api-errors/
+│   │   └── SKILL.md
+│   ├── api-linter/
 │   │   └── SKILL.md
 │   ├── api-services/
 │   │   ├── references/
@@ -76,9 +81,13 @@ calculator-mcp-server/
 │   │   │   ├── readme.md
 │   │   │   └── server-json.md
 │   │   └── SKILL.md
+│   ├── release-and-publish/
+│   │   └── SKILL.md
 │   ├── report-issue-framework/
 │   │   └── SKILL.md
 │   ├── report-issue-local/
+│   │   └── SKILL.md
+│   ├── security-pass/
 │   │   └── SKILL.md
 │   └── setup/
 │       └── SKILL.md
