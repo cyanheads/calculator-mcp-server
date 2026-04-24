@@ -31,14 +31,15 @@ export const calculateTool = tool('calculate', {
       ),
     variable: z
       .union([
-        z.literal(''),
+        z.literal('').describe('Empty string — treated as omitted (for form-based clients).'),
         z
           .string()
           .max(50)
           .regex(
             /^[a-zA-Z_][a-zA-Z0-9_]*$/,
             'Variable name must be alphanumeric (a-z, A-Z, 0-9, _).',
-          ),
+          )
+          .describe('Variable identifier (alphanumeric and underscores, max 50 chars).'),
       ])
       .optional()
       .describe(
@@ -51,7 +52,10 @@ export const calculateTool = tool('calculate', {
         'Variable assignments for the expression. Example: { "x": 5, "y": 3 } makes "x + y" evaluate to 8.',
       ),
     precision: z
-      .union([z.literal(''), z.number().int().min(1).max(16)])
+      .union([
+        z.literal('').describe('Empty string — treated as omitted (for form-based clients).'),
+        z.number().int().min(1).max(16).describe('Significant digits (integer, 1–16).'),
+      ])
       .optional()
       .describe(
         'Significant digits (1–16) for numeric results. Omit for full precision. Blank values from form-based clients are treated as omitted. Ignored for symbolic operations (simplify, derivative).',
@@ -69,37 +73,25 @@ export const calculateTool = tool('calculate', {
 
   handler(input, ctx) {
     const math = getMathService();
+    const { expression, operation, scope } = input;
     const variable = input.variable || undefined;
     const precision = typeof input.precision === 'number' ? input.precision : undefined;
 
-    switch (input.operation) {
-      case 'evaluate': {
-        const { result, resultType } = math.evaluateExpression(
-          input.expression,
-          input.scope,
-          precision,
-        );
-        ctx.log.info('Evaluated expression', { expression: input.expression });
-        return { result, resultType, expression: input.expression };
-      }
-      case 'simplify': {
-        const { result, resultType } = math.simplifyExpression(input.expression);
-        ctx.log.info('Simplified expression', { expression: input.expression });
-        return { result, resultType, expression: input.expression };
-      }
-      case 'derivative': {
+    switch (operation) {
+      case 'evaluate':
+        ctx.log.info('Evaluated expression', { expression });
+        return { ...math.evaluateExpression(expression, scope, precision), expression };
+      case 'simplify':
+        ctx.log.info('Simplified expression', { expression });
+        return { ...math.simplifyExpression(expression), expression };
+      case 'derivative':
         if (!variable) {
           throw invalidParams(
             "The 'variable' parameter is required when operation is 'derivative'.",
           );
         }
-        const { result, resultType } = math.differentiateExpression(input.expression, variable);
-        ctx.log.info('Differentiated expression', {
-          expression: input.expression,
-          variable,
-        });
-        return { result, resultType, expression: input.expression };
-      }
+        ctx.log.info('Differentiated expression', { expression, variable });
+        return { ...math.differentiateExpression(expression, variable), expression };
     }
   },
 
