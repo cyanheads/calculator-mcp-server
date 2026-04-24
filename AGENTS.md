@@ -26,15 +26,17 @@ MathService wraps a **hardened math.js instance** — dangerous functions (`impo
 
 When the user asks what to do next, what's left, or needs direction, suggest relevant options based on the current project state:
 
-1. **Re-run the `setup` skill** — ensures AGENTS.md, skills, structure, and metadata are populated and up to date with the current codebase
+1. **Re-run the `setup` skill** — ensures CLAUDE.md, skills, structure, and metadata are populated and up to date with the current codebase
 2. **Run the `design-mcp-server` skill** — if the tool/resource surface hasn't been mapped yet, work through domain design
 3. **Add tools/resources/prompts** — scaffold new definitions using the `add-tool`, `add-resource`, `add-prompt` skills
 4. **Add services** — scaffold domain service integrations using the `add-service` skill
 5. **Add tests** — scaffold tests for existing definitions using the `add-test` skill
 6. **Field-test definitions** — exercise tools/resources/prompts with real inputs using the `field-test` skill, get a report of issues and pain points
 7. **Run `devcheck`** — lint, format, typecheck, and security audit
-8. **Run the `polish-docs-meta` skill** — finalize README, CHANGELOG, metadata, and agent protocol for shipping
-9. **Run the `maintenance` skill** — sync skills and dependencies after framework updates
+8. **Run the `security-pass` skill** — audit handlers for MCP-specific security gaps (injection, blast radius, input sinks, tenant isolation)
+9. **Run the `polish-docs-meta` skill** — finalize README, CHANGELOG, metadata, and agent protocol for shipping
+10. **Run the `release-and-publish` skill** — publish to npm + MCP Registry + GHCR after wrapup
+11. **Run the `maintenance` skill** — sync skills and dependencies after framework updates
 
 Tailor suggestions to what's actually missing or stale — don't recite the full list every time.
 
@@ -214,7 +216,7 @@ src/
 
 Skills are modular instructions in `skills/` at the project root. Read them directly when a task matches — e.g., `skills/add-tool/SKILL.md` when adding a tool.
 
-**Agent skill directory:** Copy skills into the directory your agent discovers (Codex: `.Codex/skills/`, others: equivalent). This makes skills available as context without needing to reference `skills/` paths manually. After framework updates, re-copy to pick up changes.
+**Agent skill directory:** Copy skills into the directory your agent discovers (Claude Code: `.claude/skills/`, others: equivalent). This makes skills available as context without needing to reference `skills/` paths manually. After framework updates, run the `maintenance` skill — it re-syncs the agent directory automatically (Phase B).
 
 Available skills:
 
@@ -229,7 +231,9 @@ Available skills:
 | `add-test` | Scaffold test file for a tool, resource, or service |
 | `field-test` | Exercise tools/resources/prompts with real inputs, verify behavior, report issues |
 | `devcheck` | Lint, format, typecheck, audit |
+| `security-pass` | Audit handlers for MCP-specific security gaps before shipping |
 | `polish-docs-meta` | Finalize docs, README, metadata, and agent protocol for shipping |
+| `release-and-publish` | Publish to npm, MCP Registry, and GHCR after git wrapup |
 | `maintenance` | Sync skills and dependencies after updates |
 | `report-issue-framework` | File a bug or feature request against `@cyanheads/mcp-ts-core` via `gh` CLI |
 | `report-issue-local` | File a bug or feature request against this server's own repo via `gh` CLI |
@@ -237,6 +241,7 @@ Available skills:
 | `api-config` | AppConfig, parseConfig, env vars |
 | `api-context` | Context interface, logger, state, progress |
 | `api-errors` | McpError, JsonRpcErrorCode, error patterns |
+| `api-linter` | MCP definition linter rules reference (every rule ID + fix) |
 | `api-services` | LLM, Speech, Graph services |
 | `api-testing` | createMockContext, test patterns |
 | `api-utils` | Formatting, parsing, security, pagination, scheduling |
@@ -268,6 +273,8 @@ When you complete a skill's checklist, check the boxes and add a completion time
 
 ## Publishing
 
+After git wrapup (version bumps, changelog, commit, annotated tag) is complete, run the **`release-and-publish`** skill — it handles the full publish flow with retry-on-transient-failure across every registry.
+
 ### Wrapup flow
 
 When running the git wrapup checklist (`polish-docs-meta` or equivalent):
@@ -280,20 +287,21 @@ git tag -a v<version> -m "v<version>"
 git push && git push --tags
 ```
 
-### npm + Docker
+### Targets
 
-After tagging, publish to both npm and GHCR:
+This server publishes to:
 
-```bash
-bun publish --access public
+1. **npm** — `bun publish --access public`
+2. **GHCR** — multi-arch Docker image:
 
-docker buildx build --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/cyanheads/calculator-mcp-server:<version> \
-  -t ghcr.io/cyanheads/calculator-mcp-server:latest \
-  --push .
-```
+   ```bash
+   docker buildx build --platform linux/amd64,linux/arm64 \
+     -t ghcr.io/cyanheads/calculator-mcp-server:<version> \
+     -t ghcr.io/cyanheads/calculator-mcp-server:latest \
+     --push .
+   ```
 
-Remind the user to run the npm/Docker publish commands after completing a release flow.
+The `release-and-publish` skill drives both — don't run the commands manually unless the skill halts.
 
 ---
 
