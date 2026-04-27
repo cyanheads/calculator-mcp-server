@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.13 — 2026-04-27
+
+Patch release: framework `0.7.5 → 0.7.6` bump, [#2](https://github.com/cyanheads/calculator-mcp-server/issues/2) fix lifting the single-expression contract into the `calculate` tool's published JSON Schema, and adoption of the framework template's new `start` script.
+
+### Changed
+
+- Tightened the `calculate` tool descriptions so the single-expression contract is visible at tool-discovery time, preempting LLM callers that batch with `;` or newlines (closes [#2](https://github.com/cyanheads/calculator-mcp-server/issues/2)). Tool-level description gains `One expression per call.`; the `expression` field describe leads with the constraint and disambiguates `;` semantics — `One mathematical expression per call — neither \`;\` nor newlines separate statements. Inside matrices, \`;\` separates rows (e.g. \`[1, 2; 3, 4]\`).` Existing runtime guard (`hasExpressionSeparator` in `math-service.ts`) unchanged — purely a discoverability improvement.
+- Upgraded `@cyanheads/mcp-ts-core` from `^0.7.5` to `^0.7.6` (patch — `maintenance` skill Phase C now enumerates the installed `scripts/*.ts` directly instead of a hardcoded list, and `release-and-publish` / `setup` / `maintenance` skill prose was reworded so agents pick whichever git tooling is available rather than literal `git <cmd>` invocations)
+- Resynced 3 external skills from the framework (`maintenance` 1.6→1.7, `release-and-publish` 2.1→2.2, `setup` 1.5→1.6)
+- Bumped package, server metadata, README badge, and agent protocol files to `0.1.13`
+
+### Added
+
+- `start` script in `package.json` (`"start": "node dist/index.js"`) — adopted from the framework template's 0.7.6 update so external MCP runners that assume the npm-canonical `start` script work out of the box. The new script defers to `.env` for transport selection (no inline `MCP_TRANSPORT_TYPE` override); existing `start:stdio` / `start:http` variants unchanged.
+
 ## 0.1.12 — 2026-04-27
 
 Framework patch-series bump and a small `MathService` cleanup.

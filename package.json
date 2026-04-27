@@ -1,6 +1,6 @@
 {
   "name": "@cyanheads/calculator-mcp-server",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Calculator MCP server — evaluate, simplify, and differentiate math expressions.",
   "mcpName": "io.github.cyanheads/calculator-mcp-server",
   "type": "module",
@@ -21,6 +21,7 @@
     "test": "vitest run",
     "dev:stdio": "MCP_TRANSPORT_TYPE=stdio bun --watch src/index.ts",
     "dev:http": "MCP_TRANSPORT_TYPE=http bun --watch src/index.ts",
+    "start": "node dist/index.js",
     "start:stdio": "MCP_TRANSPORT_TYPE=stdio node dist/index.js",
     "start:http": "MCP_TRANSPORT_TYPE=http node dist/index.js"
   },
@@ -63,7 +64,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@cyanheads/mcp-ts-core": "^0.7.5",
+    "@cyanheads/mcp-ts-core": "^0.7.6",
     "mathjs": "^15.2.0",
     "pino-pretty": "^13.1.3"
   },
