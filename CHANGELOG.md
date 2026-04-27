@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.12 — 2026-04-27
+
+Framework patch-series bump and a small `MathService` cleanup.
+
+### Changed
+
+- Upgraded `@cyanheads/mcp-ts-core` from `^0.7.0` to `^0.7.5` (spans five patch releases — HTTP Origin guard now fails closed for remote browser origins (loopback-only when `MCP_ALLOWED_ORIGINS` is unset), landing-page `requireAuth` validates bearer tokens, raw caller payloads removed from default logs, opt-in `LOG_LLM_INTERACTIONS`, `vitest.config` shipped as `.mjs` to avoid Node 22.7+ type-strip failure, new `Framework Antipatterns` devcheck step, `format-parity` numeric normalization tightened to reject lossy decimal-shift transforms, `describe-on-fields` linter exempts `z.literal` union variants, `landing.connectSnippets` operator override, and Cloudflare email-rewrite defense in connect snippets)
+- Renamed `MathService.sanitizeScope` to `validateScope` — function only validated and threw, never sanitized; new name and `void` return reflect actual behavior
+- Resynced 5 external skills from the framework (`maintenance` 1.5→1.6, `api-linter` 1.1→1.2, plus content-only updates to `api-utils`, `design-mcp-server`, `field-test`)
+- Resynced `scripts/devcheck.ts` from the framework (adds the new `Framework Antipatterns` check step)
+- Bumped package, server metadata, README badge, and agent protocol files to `0.1.12`
+
+### Added
+
+- `scripts/check-framework-antipatterns.ts` — pulled in alongside the updated `devcheck.ts` so the new check has a script to invoke. (Required because the `maintenance` skill's Phase C currently uses a hardcoded script list — see [cyanheads/mcp-ts-core#69](https://github.com/cyanheads/mcp-ts-core/issues/69).)
+
 ## 0.1.11 — 2026-04-24
 
 Framework bump to `@cyanheads/mcp-ts-core` 0.7.0, handler simplification, and skill sync.
