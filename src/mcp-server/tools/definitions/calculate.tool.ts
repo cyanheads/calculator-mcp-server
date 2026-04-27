@@ -10,7 +10,7 @@ import { getMathService } from '@/services/math/math-service.js';
 
 export const calculateTool = tool('calculate', {
   description:
-    'Evaluate math expressions, simplify algebraic expressions, or compute symbolic derivatives. Supports arithmetic, trigonometry, statistics, matrices, complex numbers, units, and combinatorics.',
+    'Evaluate math expressions, simplify algebraic expressions, or compute symbolic derivatives. One expression per call. Supports arithmetic, trigonometry, statistics, matrices, complex numbers, units, and combinatorics.',
   annotations: {
     readOnlyHint: true,
     idempotentHint: true,
@@ -21,7 +21,7 @@ export const calculateTool = tool('calculate', {
       .string()
       .min(1)
       .describe(
-        'Mathematical expression to evaluate. Supports standard notation: arithmetic (+, -, *, /, ^, %), functions (sin, cos, sqrt, log, abs, round, etc.), constants (pi, e, phi, i), matrices ([1, 2; 3, 4]), units (5 kg to lbs), and variables (when scope is provided).',
+        `One mathematical expression per call — neither \`;\` nor newlines separate statements. Inside matrices, \`;\` separates rows (e.g. \`[1, 2; 3, 4]\`). Supports arithmetic (+, -, *, /, ^, %), functions (sin, cos, sqrt, log, abs, round, etc.), constants (pi, e, phi, i), matrices, units (5 kg to lbs), and variables (when scope is provided).`,
       ),
     operation: z
       .enum(['evaluate', 'simplify', 'derivative'])
