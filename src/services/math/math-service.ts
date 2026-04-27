@@ -154,9 +154,9 @@ export class MathService {
     precision?: number,
   ): MathResult {
     this.validateInput(expression);
-    const sanitizedScope = scope ? this.sanitizeScope(scope) : undefined;
+    if (scope) this.validateScope(scope);
     const raw = this.runWithTimeout(() =>
-      sanitizedScope ? this.evaluate(expression, sanitizedScope) : this.evaluate(expression),
+      scope ? this.evaluate(expression, scope) : this.evaluate(expression),
     );
     if (typeof raw === 'number' && !Number.isFinite(raw)) {
       throw invalidParams(
@@ -208,7 +208,7 @@ export class MathService {
   }
 
   /** Reject scope keys that could pollute the object prototype chain. */
-  private sanitizeScope(scope: Record<string, number>): Record<string, number> {
+  private validateScope(scope: Record<string, number>): void {
     for (const key of Object.keys(scope)) {
       if (BLOCKED_SCOPE_KEYS.has(key)) {
         throw invalidParams(
@@ -216,7 +216,6 @@ export class MathService {
         );
       }
     }
-    return scope;
   }
 
   /** Reject result types that leak internals (functions, parsers, multi-expression ResultSets). */
