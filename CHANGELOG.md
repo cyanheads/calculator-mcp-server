@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.15 — 2026-04-28
+
+Patch release: framework `0.7.6 → 0.8.0` bump, agent protocol Errors section rewritten to lead with the new typed error contract pattern, and three external skills resynced from the framework.
+
+### Changed
+
+- Upgraded `@cyanheads/mcp-ts-core` from `^0.7.6` to `^0.8.0` (minor — adds typed error contracts via `errors: [{ reason, code, when, retryable? }]` on `tool()` / `resource()` with typed `ctx.fail(reason, …)`, advertises the failure surface in `tools/list` under `_meta['mcp-ts-core/errors']`; ships `httpErrorFromResponse` and `partialResult` utilities, three new error factories (`internalError`, `serializationError`, `databaseError`), and handler-body + error-contract conformance lint rules. Fully backwards compatible).
+- Agent protocol files (`CLAUDE.md` / `AGENTS.md`) — Errors section rewritten to lead with the typed error contract as the recommended path, demote factories + auto-classification to the fallback. Added `add-app-tool` to the skills table. Added a form-client safety bullet to the checklist.
+- Resynced 3 external skills from the framework (`maintenance` 1.7→1.8, `report-issue-framework` 1.3→1.4, `security-pass` 1.1→1.2 — `security-pass` Axis 7 leakage check now greps `ctx.fail(` and `httpErrorFromResponse(` alongside `new McpError`).
+- Bumped package, server metadata, README badge, and agent protocol files to `0.1.15`.
+
+### Added
+
+- `scripts/split-changelog.ts` adopted from the framework template — supports the directory-based changelog convention used upstream. The calculator continues to use a flat `CHANGELOG.md`; the script is in place for a future migration.
+
 ## 0.1.14 — 2026-04-27
 
 Patch release surfacing two field-test findings in the `calculate` tool: numeric results no longer flip into scientific notation at math.js's default `exp ≥ 5` threshold, and the schema descriptions stop naming a specific consumer.
