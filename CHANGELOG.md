@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.16 — 2026-04-28
+
+Patch release: adopt the framework `0.8.0` typed error contract on the `calculate` tool and reclassify input-validation failures from JSON-RPC `InvalidParams` (`-32602`) to the framework's purpose-built `ValidationError` (`-32007`). Closes [#3](https://github.com/cyanheads/calculator-mcp-server/issues/3) and [#4](https://github.com/cyanheads/calculator-mcp-server/issues/4).
+
+### Changed
+
+- **`calculate` error codes** — swapped 8 `invalidParams` (`-32602`) throws to `validationError` (`-32007`) across `src/services/math/math-service.ts` (7 sites) and `src/mcp-server/tools/definitions/calculate.tool.ts` (1 site). `serviceUnavailable` on evaluation timeout retained. Observability dashboards keyed on `mcp_error_classified_code` will now group these under `Client: Validation` instead of the unmapped JSON-RPC bucket. Closes [#3](https://github.com/cyanheads/calculator-mcp-server/issues/3).
+- **`calculate` typed error contract** — declared all 10 failure modes as `errors: [{ reason, code, when, retryable? }]` on the tool definition; published in `tools/list` under `_meta['mcp-ts-core/errors']`. Reasons: `empty_expression`, `expression_too_long`, `multiple_expressions`, `reserved_scope_key`, `disallowed_result_type`, `result_too_large`, `undefined_result`, `parse_failed`, `derivative_missing_variable`, `evaluation_timeout` (`ServiceUnavailable`, `retryable: false`). The handler-side cross-field check now routes through `ctx.fail('derivative_missing_variable', …)`; service throws carry `data: { reason }` so the framework's auto-classifier preserves a stable identifier on the wire. Closes [#4](https://github.com/cyanheads/calculator-mcp-server/issues/4).
+
+### Added
+
+- **Wire-shape conformance test suite** (`tests/mcp-server/tools/definitions/calculate.tool.test.ts`) — one test per contract reason (10 total) asserting the thrown `McpError`'s `code` and `data.reason` match the contract entry. Compensates for the framework lint's blind spot on service-thrown reasons. `result_too_large` and `evaluation_timeout` use a directly-constructed `MathService` with shrunken config (5-char limit / 1ms timeout) since the singleton's defaults can't trigger them.
+
+### Fixed
+
+- **Test helper now wires `ctx.fail`** — existing `derivative` failure tests had been passing accidentally: `createMockContext()` doesn't attach `ctx.fail`, the resulting `TypeError` happened to serialize a substring `vitest.toThrow()` matched. New `mockCtx()` helper passes `errors: calculateTool.errors` so `ctx.fail` is properly available in tests.
+
+### Meta
+
+- Bumped package, server metadata, README badge, and agent protocol files to `0.1.16`.
+
 ## 0.1.15 — 2026-04-28
 
 Patch release: framework `0.7.6 → 0.8.0` bump, agent protocol Errors section rewritten to lead with the new typed error contract pattern, and three external skills resynced from the framework.

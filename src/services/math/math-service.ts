@@ -6,7 +6,7 @@
  */
 
 import vm from 'node:vm';
-import { invalidParams, serviceUnavailable } from '@cyanheads/mcp-ts-core/errors';
+import { serviceUnavailable, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { all, create, type SimplifyRule } from 'mathjs';
 import type { ServerConfig } from '@/config/server-config.js';
 import type { MathResult } from './types.js';
@@ -162,8 +162,9 @@ export class MathService {
       scope ? this.evaluate(expression, scope) : this.evaluate(expression),
     );
     if (typeof raw === 'number' && !Number.isFinite(raw)) {
-      throw invalidParams(
+      throw validationError(
         `Expression evaluated to ${raw} — this typically means the operation is mathematically undefined (e.g., division by zero, log of zero). Check the expression.`,
+        { reason: 'undefined_result' },
       );
     }
     const resultType = this.typeOf(raw);
@@ -204,15 +205,21 @@ export class MathService {
 
   private validateInput(expression: string): void {
     if (!expression.trim()) {
-      throw invalidParams('Expression cannot be empty.');
+      throw validationError('Expression cannot be empty.', { reason: 'empty_expression' });
     }
     if (expression.length > this.config.maxExpressionLength) {
-      throw invalidParams(
+      throw validationError(
         `Expression exceeds maximum length of ${this.config.maxExpressionLength} characters.`,
+        { reason: 'expression_too_long' },
       );
     }
     if (hasExpressionSeparator(expression)) {
-      throw invalidParams('Multiple expressions are not allowed. Submit one expression per call.');
+      throw validationError(
+        'Multiple expressions are not allowed. Submit one expression per call.',
+        {
+          reason: 'multiple_expressions',
+        },
+      );
     }
   }
 
@@ -220,8 +227,9 @@ export class MathService {
   private validateScope(scope: Record<string, number>): void {
     for (const key of Object.keys(scope)) {
       if (BLOCKED_SCOPE_KEYS.has(key)) {
-        throw invalidParams(
+        throw validationError(
           `Scope key "${key}" is not allowed — it conflicts with a reserved property name.`,
+          { reason: 'reserved_scope_key' },
         );
       }
     }
@@ -230,8 +238,9 @@ export class MathService {
   /** Reject result types that leak internals (functions, parsers, multi-expression ResultSets). */
   private validateResultType(resultType: string): void {
     if (BLOCKED_RESULT_TYPES.has(resultType)) {
-      throw invalidParams(
+      throw validationError(
         `Expression produced a ${resultType} — only numeric, string, matrix, complex, unit, and boolean results are allowed.`,
+        { reason: 'disallowed_result_type' },
       );
     }
   }
@@ -239,8 +248,9 @@ export class MathService {
   /** Reject results that exceed the configured maximum size. */
   private validateResultSize(result: string): void {
     if (result.length > this.config.maxResultLength) {
-      throw invalidParams(
+      throw validationError(
         `Result exceeds maximum size (${this.config.maxResultLength} characters). Reduce matrix dimensions or simplify the expression.`,
+        { reason: 'result_too_large' },
       );
     }
   }
@@ -256,11 +266,12 @@ export class MathService {
       if (err instanceof Error && 'code' in err && err.code === 'ERR_SCRIPT_EXECUTION_TIMEOUT') {
         throw serviceUnavailable(
           `Expression evaluation timed out after ${this.config.evaluationTimeoutMs / 1000} seconds. Simplify the expression or reduce matrix dimensions.`,
+          { reason: 'evaluation_timeout' },
         );
       }
       // All non-timeout errors from the VM are expression-related
       const message = err instanceof Error ? err.message : String(err);
-      throw invalidParams(`Invalid expression: ${message}`);
+      throw validationError(`Invalid expression: ${message}`, { reason: 'parse_failed' });
     }
   }
 }

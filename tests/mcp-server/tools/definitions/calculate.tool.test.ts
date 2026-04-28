@@ -3,18 +3,35 @@
  * @module mcp-server/tools/definitions/calculate.tool.test
  */
 
+import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { getServerConfig } from '@/config/server-config.js';
 import { calculateTool } from '@/mcp-server/tools/definitions/calculate.tool.js';
-import { initMathService } from '@/services/math/math-service.js';
+import { initMathService, MathService } from '@/services/math/math-service.js';
 
 function parse(input: Record<string, unknown>) {
   return calculateTool.input.parse(input);
 }
 
+function mockCtx() {
+  return createMockContext({ errors: calculateTool.errors });
+}
+
 function call(input: Record<string, unknown>) {
-  return Promise.resolve(calculateTool.handler(parse(input), createMockContext()));
+  return Promise.resolve(calculateTool.handler(parse(input), mockCtx()));
+}
+
+function expectMcpError(fn: () => unknown, code: JsonRpcErrorCode, reason: string): void {
+  let caught: unknown;
+  try {
+    fn();
+  } catch (err) {
+    caught = err;
+  }
+  expect(caught).toBeInstanceOf(McpError);
+  expect((caught as McpError).code).toBe(code);
+  expect((caught as McpError).data?.reason).toBe(reason);
 }
 
 beforeAll(() => {
@@ -80,15 +97,15 @@ describe('calculate tool', () => {
     });
 
     it('throws for 1/0 (Infinity)', () => {
-      expect(() =>
-        calculateTool.handler(parse({ expression: '1 / 0' }), createMockContext()),
-      ).toThrow('mathematically undefined');
+      expect(() => calculateTool.handler(parse({ expression: '1 / 0' }), mockCtx())).toThrow(
+        'mathematically undefined',
+      );
     });
 
     it('throws for 0/0 (NaN)', () => {
-      expect(() =>
-        calculateTool.handler(parse({ expression: '0 / 0' }), createMockContext()),
-      ).toThrow('mathematically undefined');
+      expect(() => calculateTool.handler(parse({ expression: '0 / 0' }), mockCtx())).toThrow(
+        'mathematically undefined',
+      );
     });
   });
 
@@ -141,10 +158,7 @@ describe('calculate tool', () => {
 
     it('throws when variable is missing', () => {
       expect(() =>
-        calculateTool.handler(
-          parse({ expression: 'x^2', operation: 'derivative' }),
-          createMockContext(),
-        ),
+        calculateTool.handler(parse({ expression: 'x^2', operation: 'derivative' }), mockCtx()),
       ).toThrow("The 'variable' parameter is required");
     });
 
@@ -152,7 +166,7 @@ describe('calculate tool', () => {
       expect(() =>
         calculateTool.handler(
           parse({ expression: 'x^2', operation: 'derivative', variable: '' }),
-          createMockContext(),
+          mockCtx(),
         ),
       ).toThrow("The 'variable' parameter is required");
     });
@@ -161,33 +175,29 @@ describe('calculate tool', () => {
   describe('error handling', () => {
     it('rejects expressions exceeding max length', () => {
       const longExpr = '1 +'.repeat(500);
-      expect(() =>
-        calculateTool.handler(parse({ expression: longExpr }), createMockContext()),
-      ).toThrow('exceeds maximum length');
+      expect(() => calculateTool.handler(parse({ expression: longExpr }), mockCtx())).toThrow(
+        'exceeds maximum length',
+      );
     });
 
     it('rejects multiple expressions separated by semicolons', () => {
-      expect(() =>
-        calculateTool.handler(parse({ expression: '1 + 2; 3 + 4' }), createMockContext()),
-      ).toThrow('Multiple expressions are not allowed');
+      expect(() => calculateTool.handler(parse({ expression: '1 + 2; 3 + 4' }), mockCtx())).toThrow(
+        'Multiple expressions are not allowed',
+      );
     });
 
     it('rejects invalid syntax', () => {
-      expect(() =>
-        calculateTool.handler(parse({ expression: '2 +* 3' }), createMockContext()),
-      ).toThrow();
+      expect(() => calculateTool.handler(parse({ expression: '2 +* 3' }), mockCtx())).toThrow();
     });
 
     it('rejects disabled functions in expressions', () => {
       expect(() =>
-        calculateTool.handler(parse({ expression: 'evaluate("2+3")' }), createMockContext()),
+        calculateTool.handler(parse({ expression: 'evaluate("2+3")' }), mockCtx()),
       ).toThrow('disabled');
     });
 
     it('rejects unknown functions', () => {
-      expect(() =>
-        calculateTool.handler(parse({ expression: 'foo(5)' }), createMockContext()),
-      ).toThrow();
+      expect(() => calculateTool.handler(parse({ expression: 'foo(5)' }), mockCtx())).toThrow();
     });
   });
 
@@ -204,6 +214,108 @@ describe('calculate tool', () => {
           text: '**Expression:** `6 * 7`\n**Result:** 42\n**Type:** number',
         },
       ]);
+    });
+  });
+
+  /**
+   * Wire-shape conformance: every contract entry in `calculateTool.errors`
+   * must be reachable, and the thrown `McpError` must carry the declared
+   * `code` and `data.reason`. The contract conformance lint can't see
+   * service-layer throws, so this suite is the compensating control.
+   */
+  describe('error contract wire-shape', () => {
+    it('empty_expression', () => {
+      expectMcpError(
+        () => calculateTool.handler(parse({ expression: '   ' }), mockCtx()),
+        JsonRpcErrorCode.ValidationError,
+        'empty_expression',
+      );
+    });
+
+    it('expression_too_long', () => {
+      expectMcpError(
+        () => calculateTool.handler(parse({ expression: '1+'.repeat(700) }), mockCtx()),
+        JsonRpcErrorCode.ValidationError,
+        'expression_too_long',
+      );
+    });
+
+    it('multiple_expressions', () => {
+      expectMcpError(
+        () => calculateTool.handler(parse({ expression: '1 + 2; 3 + 4' }), mockCtx()),
+        JsonRpcErrorCode.ValidationError,
+        'multiple_expressions',
+      );
+    });
+
+    it('reserved_scope_key', () => {
+      expectMcpError(
+        () =>
+          calculateTool.handler(parse({ expression: 'x', scope: { constructor: 0 } }), mockCtx()),
+        JsonRpcErrorCode.ValidationError,
+        'reserved_scope_key',
+      );
+    });
+
+    it('disallowed_result_type', () => {
+      expectMcpError(
+        () => calculateTool.handler(parse({ expression: 'f(x) = x^2' }), mockCtx()),
+        JsonRpcErrorCode.ValidationError,
+        'disallowed_result_type',
+      );
+    });
+
+    it('result_too_large', () => {
+      // Construct a service with a tiny maxResultLength to trigger this deterministically.
+      const svc = new MathService({
+        maxExpressionLength: 1000,
+        evaluationTimeoutMs: 5000,
+        maxResultLength: 5,
+      });
+      expectMcpError(
+        () => svc.evaluateExpression('123456789'),
+        JsonRpcErrorCode.ValidationError,
+        'result_too_large',
+      );
+    });
+
+    it('undefined_result', () => {
+      expectMcpError(
+        () => calculateTool.handler(parse({ expression: '1 / 0' }), mockCtx()),
+        JsonRpcErrorCode.ValidationError,
+        'undefined_result',
+      );
+    });
+
+    it('parse_failed', () => {
+      expectMcpError(
+        () => calculateTool.handler(parse({ expression: '2 +* 3' }), mockCtx()),
+        JsonRpcErrorCode.ValidationError,
+        'parse_failed',
+      );
+    });
+
+    it('derivative_missing_variable', () => {
+      expectMcpError(
+        () =>
+          calculateTool.handler(parse({ expression: 'x^2', operation: 'derivative' }), mockCtx()),
+        JsonRpcErrorCode.ValidationError,
+        'derivative_missing_variable',
+      );
+    });
+
+    it('evaluation_timeout', () => {
+      // Tight timeout (1ms) + an expensive matrix op forces the vm to abort.
+      const svc = new MathService({
+        maxExpressionLength: 10_000,
+        evaluationTimeoutMs: 1,
+        maxResultLength: 1_000_000,
+      });
+      expectMcpError(
+        () => svc.evaluateExpression('eigs(zeros(50, 50))'),
+        JsonRpcErrorCode.ServiceUnavailable,
+        'evaluation_timeout',
+      );
     });
   });
 });

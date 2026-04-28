@@ -5,7 +5,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { invalidParams } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getMathService } from '@/services/math/math-service.js';
 
 export const calculateTool = tool('calculate', {
@@ -70,6 +70,59 @@ export const calculateTool = tool('calculate', {
       ),
     expression: z.string().describe('The original expression as received.'),
   }),
+  errors: [
+    {
+      reason: 'empty_expression',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Expression is empty or whitespace-only.',
+    },
+    {
+      reason: 'expression_too_long',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Expression exceeds the configured max length (CALC_MAX_EXPRESSION_LENGTH).',
+    },
+    {
+      reason: 'multiple_expressions',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Expression contains a separator (`;` or newline) outside matrix brackets.',
+    },
+    {
+      reason: 'reserved_scope_key',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Scope contains a reserved JS property name (`__proto__`, `constructor`, etc.).',
+    },
+    {
+      reason: 'disallowed_result_type',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Result type is function, parser, or multi-expression ResultSet — security guard.',
+    },
+    {
+      reason: 'result_too_large',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Stringified result exceeds the configured max size (CALC_MAX_RESULT_LENGTH).',
+    },
+    {
+      reason: 'undefined_result',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Expression evaluated to Infinity, -Infinity, or NaN (e.g., division by zero).',
+    },
+    {
+      reason: 'parse_failed',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'mathjs could not parse the expression.',
+    },
+    {
+      reason: 'derivative_missing_variable',
+      code: JsonRpcErrorCode.ValidationError,
+      when: '`operation` is `derivative` but `variable` was not provided.',
+    },
+    {
+      reason: 'evaluation_timeout',
+      code: JsonRpcErrorCode.ServiceUnavailable,
+      when: 'Expression evaluation exceeded the configured timeout (CALC_EVALUATION_TIMEOUT_MS).',
+      retryable: false,
+    },
+  ],
 
   handler(input, ctx) {
     const math = getMathService();
@@ -86,7 +139,8 @@ export const calculateTool = tool('calculate', {
         return { ...math.simplifyExpression(expression), expression };
       case 'derivative':
         if (!variable) {
-          throw invalidParams(
+          throw ctx.fail(
+            'derivative_missing_variable',
             "The 'variable' parameter is required when operation is 'derivative'.",
           );
         }
