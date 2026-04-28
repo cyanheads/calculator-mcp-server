@@ -31,7 +31,7 @@ export const calculateTool = tool('calculate', {
       ),
     variable: z
       .union([
-        z.literal('').describe('Empty string — treated as omitted (for form-based clients).'),
+        z.literal('').describe('Empty string — treated as omitted.'),
         z
           .string()
           .max(50)
@@ -43,7 +43,7 @@ export const calculateTool = tool('calculate', {
       ])
       .optional()
       .describe(
-        'Variable to differentiate with respect to. Required when operation is "derivative". Blank values from form-based clients are treated as omitted. Example: "x".',
+        'Variable to differentiate with respect to. Required when operation is "derivative". Empty string is treated as omitted. Example: "x".',
       ),
     scope: z
       .record(z.string(), z.number())
@@ -53,12 +53,12 @@ export const calculateTool = tool('calculate', {
       ),
     precision: z
       .union([
-        z.literal('').describe('Empty string — treated as omitted (for form-based clients).'),
+        z.literal('').describe('Empty string — treated as omitted.'),
         z.number().int().min(1).max(16).describe('Significant digits (integer, 1–16).'),
       ])
       .optional()
       .describe(
-        'Significant digits (1–16) for numeric results. Omit for full precision. Blank values from form-based clients are treated as omitted. Ignored for symbolic operations (simplify, derivative).',
+        'Significant digits (1–16) for numeric results. Omit for full precision. Empty string is treated as omitted. Ignored for symbolic operations (simplify, derivative).',
       ),
   }),
   output: z.object({

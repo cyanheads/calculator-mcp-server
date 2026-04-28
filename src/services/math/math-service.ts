@@ -116,7 +116,10 @@ export class MathService {
   private readonly simplify: (expr: string, rules?: SimplifyRule[]) => { toString(): string };
   private readonly derivative: (expr: string, variable: string) => { toString(): string };
   private readonly simplifyRules: SimplifyRule[];
-  private readonly format: (value: unknown, options?: { precision?: number }) => string;
+  private readonly format: (
+    value: unknown,
+    options?: { precision?: number; lowerExp?: number; upperExp?: number },
+  ) => string;
   private readonly typeOf: (value: unknown) => string;
   private readonly config: ServerConfig;
 
@@ -165,7 +168,13 @@ export class MathService {
     }
     const resultType = this.typeOf(raw);
     this.validateResultType(resultType);
-    const result = precision != null ? this.format(raw, { precision }) : this.format(raw);
+    // Match JS Number.toString thresholds — math.js defaults to exp ≥ 5,
+    // which would render 83810205 as "8.3810205e+7".
+    const result = this.format(raw, {
+      lowerExp: -6,
+      upperExp: 21,
+      ...(precision != null && { precision }),
+    });
     this.validateResultSize(result);
     return { result, resultType };
   }

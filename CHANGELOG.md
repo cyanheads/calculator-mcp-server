@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.14 — 2026-04-27
+
+Patch release surfacing two field-test findings in the `calculate` tool: numeric results no longer flip into scientific notation at math.js's default `exp ≥ 5` threshold, and the schema descriptions stop naming a specific consumer.
+
+### Fixed
+
+- **`calculate` numeric formatting** — widen `math.format()` thresholds to `lowerExp: -6, upperExp: 21` (matching JS `Number.toString`) so normal-magnitude integers render as plain digits. `12345 * 6789` now returns `"83810205"` instead of `"8.3810205e+7"`; `factorial(10)` returns `"3628800"` instead of `"3.6288e+6"`. BigNumbers and very-tiny / very-large doubles still use exponential notation, and the `precision` parameter is unaffected. Implementation: `src/services/math/math-service.ts`.
+
+### Changed
+
+- **`calculate` schema descriptions** — drop "for form-based clients" / "Blank values from form-based clients" phrasings from `variable.anyOf[0]`, `variable`, `precision.anyOf[0]`, and `precision` `.describe()` strings. The schema no longer references a specific consumer; the empty-string compat behavior is preserved. Implementation: `src/mcp-server/tools/definitions/calculate.tool.ts`.
+- Bumped package, server metadata, README badge, and agent protocol files to `0.1.14`.
+
 ## 0.1.13 — 2026-04-27
 
 Patch release: framework `0.7.5 → 0.7.6` bump, [#2](https://github.com/cyanheads/calculator-mcp-server/issues/2) fix lifting the single-expression contract into the `calculate` tool's published JSON Schema, and adoption of the framework template's new `start` script.
