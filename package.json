@@ -1,6 +1,6 @@
 {
   "name": "@cyanheads/calculator-mcp-server",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "Calculator MCP server — evaluate, simplify, and differentiate math expressions.",
   "mcpName": "io.github.cyanheads/calculator-mcp-server",
   "type": "module",

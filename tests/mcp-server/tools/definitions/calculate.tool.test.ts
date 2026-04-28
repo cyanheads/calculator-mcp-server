@@ -75,6 +75,34 @@ describe('calculate tool', () => {
       expect(result.result).toBe('86.6');
     });
 
+    it('evaluates average() as alias for mean', async () => {
+      const result = await call({ expression: 'average(1, 2, 3, 4, 5)' });
+      expect(result.result).toBe('3');
+    });
+
+    it('evaluates avg() as alias for mean', async () => {
+      const result = await call({ expression: 'avg([10, 20, 30])' });
+      expect(result.result).toBe('20');
+    });
+
+    it('converts mph to m/s', async () => {
+      const result = await call({ expression: '60 mph to m/s', precision: 5 });
+      expect(result.resultType).toBe('Unit');
+      expect(result.result).toContain('m / s');
+    });
+
+    it('converts lightyear to km', async () => {
+      const result = await call({ expression: '1 lightyear to km', precision: 5 });
+      expect(result.resultType).toBe('Unit');
+      expect(result.result).toContain('km');
+    });
+
+    it('converts knots to m/s', async () => {
+      const result = await call({ expression: '10 knots to m/s', precision: 5 });
+      expect(result.resultType).toBe('Unit');
+      expect(result.result).toContain('m / s');
+    });
+
     it('evaluates complex numbers', async () => {
       const result = await call({ expression: 'sqrt(-4)' });
       expect(result.result).toBe('2i');

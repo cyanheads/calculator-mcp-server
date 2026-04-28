@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.17 — 2026-04-28
+
+Patch release: natural-language ergonomics — the `calculate` tool now accepts `average`/`avg` as aliases for `mean`, and the `mph`, `knot`, and `lightyear` units (with their plurals and standard abbreviations). Closes [#5](https://github.com/cyanheads/calculator-mcp-server/issues/5) and [#6](https://github.com/cyanheads/calculator-mcp-server/issues/6).
+
+### Added
+
+- **Function aliases** — `average` and `avg` registered as aliases for `mean` via `math.import()` in `MathService` constructor (`src/services/math/math-service.ts`). Both resolve to the same typed function as `mean`. Closes [#5](https://github.com/cyanheads/calculator-mcp-server/issues/5).
+- **Custom units** — `mph` (= `1 mile/hour`), `knot` (= `1852 m/hour`, with aliases `knots`, `kt`, `kts`), and `lightyear` (= `9460730472580800 m`, with aliases `lightyears`, `ly`) registered via `math.createUnit()` in the constructor before the disabling step clobbers `createUnit` in the expression scope. Definitions use exact SI-derived values. Closes [#6](https://github.com/cyanheads/calculator-mcp-server/issues/6).
+- **5 wire-shape tests** for the new aliases and units in `tests/mcp-server/tools/definitions/calculate.tool.test.ts` covering `average`/`avg` evaluation and `60 mph → m/s`, `1 lightyear → km`, `10 knots → m/s` conversions.
+
+### Changed
+
+- **Help resource** (`calculator://help`) — Statistics line now reads `mean (aliases: average, avg)`; Common units line now includes `lightyear (ly)`, `mph`, `knot (kt)`. Discovery surface stays in sync with the registered surface.
+
+### Meta
+
+- Bumped package, server metadata, README badge, and agent protocol files to `0.1.17`.
+- [#7](https://github.com/cyanheads/calculator-mcp-server/issues/7) (intermediate overflow on factorial ratios) — left open with a [rejection comment](https://github.com/cyanheads/calculator-mcp-server/issues/7#issuecomment-4339684505) on the proposed BigNumber-as-default fix and a counter-proposal for an opt-in `numericType` tool parameter.
+
 ## 0.1.16 — 2026-04-28
 
 Patch release: adopt the framework `0.8.0` typed error contract on the `calculate` tool and reclassify input-validation failures from JSON-RPC `InvalidParams` (`-32602`) to the framework's purpose-built `ValidationError` (`-32007`). Closes [#3](https://github.com/cyanheads/calculator-mcp-server/issues/3) and [#4](https://github.com/cyanheads/calculator-mcp-server/issues/4).

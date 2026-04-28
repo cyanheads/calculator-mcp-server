@@ -7,7 +7,7 @@
 
 import vm from 'node:vm';
 import { serviceUnavailable, validationError } from '@cyanheads/mcp-ts-core/errors';
-import { all, create, type SimplifyRule } from 'mathjs';
+import { all, create, type SimplifyRule, type UnitDefinition } from 'mathjs';
 import type { ServerConfig } from '@/config/server-config.js';
 import type { MathResult } from './types.js';
 
@@ -33,6 +33,17 @@ const TRIG_SIMPLIFY_RULES: SimplifyRule[] = [
   '2 * sin(n) * cos(n) -> sin(2 * n)',
   'cos(n)^2 - sin(n)^2 -> cos(2 * n)',
 ];
+
+/**
+ * Custom units registered during service init. math.js disables `createUnit`
+ * in the expression scope, so these are added programmatically before the
+ * disabling step. Definitions use exact SI-derived values where possible.
+ */
+const CUSTOM_UNITS: Record<string, string | UnitDefinition> = {
+  mph: '1 mile/hour',
+  knot: { definition: '1852 m/hour', aliases: ['knots', 'kt', 'kts'] },
+  lightyear: { definition: '9460730472580800 m', aliases: ['lightyears', 'ly'] },
+};
 
 /**
  * Functions disabled in the expression scope for security.
@@ -135,6 +146,11 @@ export class MathService {
     this.simplifyRules = [...math.simplify.rules, ...TRIG_SIMPLIFY_RULES];
     this.format = math.format.bind(math);
     this.typeOf = math.typeOf.bind(math);
+
+    // Register custom units and natural-language function aliases.
+    // Must run before createUnit/import are disabled below.
+    math.createUnit(CUSTOM_UNITS);
+    math.import({ average: math.mean, avg: math.mean });
 
     // Disable dangerous functions in expression scope
     const disabled: Record<string, unknown> = {};
@@ -329,7 +345,7 @@ abs, ceil, floor, round, sign, sqrt, cbrt, exp, expm1, log, log2, log10, log1p, 
 sin, cos, tan, asin, acos, atan, atan2, sinh, cosh, tanh, asinh, acosh, atanh, sec, csc, cot, asec, acsc, acot, sech, csch, coth
 
 ### Statistics
-mean, median, mode, std, variance, min, max, sum, prod, quantileSeq, mad, count
+mean (aliases: average, avg), median, mode, std, variance, min, max, sum, prod, quantileSeq, mad, count
 
 ### Matrix
 det, inv, transpose, trace, zeros, ones, identity, diag, size, reshape, flatten, concat, sort, cross, dot, eigs, expm, sqrtm, kron, pinv, range
@@ -349,7 +365,7 @@ equal, unequal, larger, largerEq, smaller, smallerEq, compare, deepEqual
 ### Unit Conversion
 Syntax: \`value unit to targetUnit\`
 
-Common units: m, cm, mm, km, inch, ft, yard, mile, kg, g, lb, oz, s, min, hour, day, celsius, fahrenheit, kelvin, liter, gallon, joule, watt, newton, pascal, bar, psi, radian, degree
+Common units: m, cm, mm, km, inch, ft, yard, mile, lightyear (ly), kg, g, lb, oz, s, min, hour, day, mph, knot (kt), celsius, fahrenheit, kelvin, liter, gallon, joule, watt, newton, pascal, bar, psi, radian, degree
 
 ## Syntax Examples
 
