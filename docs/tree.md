@@ -1,11 +1,12 @@
 # calculator-mcp-server - Directory Structure
 
-Generated on: 2026-04-24 20:40:02
+Generated on: 2026-04-29 19:15:13
 
 ```text
 calculator-mcp-server/
 ├── .agents/
 ├── .claude/
+├── .gemini/
 ├── .github/
 │   └── ISSUE_TEMPLATE/
 │       ├── bug_report.yml
@@ -20,10 +21,12 @@ calculator-mcp-server/
 │   ├── build-changelog.ts
 │   ├── build.ts
 │   ├── check-docs-sync.ts
+│   ├── check-framework-antipatterns.ts
 │   ├── check-skills-sync.ts
 │   ├── clean.ts
 │   ├── devcheck.ts
 │   ├── lint-mcp.ts
+│   ├── split-changelog.ts
 │   └── tree.ts
 ├── skills/
 │   ├── add-app-tool/

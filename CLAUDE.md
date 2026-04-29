@@ -1,7 +1,7 @@
 # Agent Protocol
 
 **Server:** calculator-mcp-server
-**Version:** 0.1.17
+**Version:** 0.1.18
 **Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
 
 > **Read the framework docs first:** `node_modules/@cyanheads/mcp-ts-core/CLAUDE.md` contains the full API reference — builders, Context, error codes, exports, patterns. This file covers server-specific conventions only.
@@ -160,7 +160,9 @@ Handlers receive a unified `ctx` object. Key properties:
 
 Handlers throw — the framework catches, classifies, and formats.
 
-**Recommended: typed error contract.** Declare `errors: [{ reason, code, when, retryable? }]` on `tool()` / `resource()` to advertise the failure surface in `tools/list` (under `_meta['mcp-ts-core/errors']`) and receive a typed `ctx.fail(reason, …)` keyed by the declared reason union. TypeScript catches `ctx.fail('typo')` at compile time, `data.reason` is auto-populated for observability, and the linter enforces conformance against the handler body. Baseline codes (`InternalError`, `ServiceUnavailable`, `Timeout`, `ValidationError`, `SerializationError`) bubble freely and don't need declaring.
+**Recommended: typed error contract.** Declare `errors: [{ reason, code, when, retryable? }]` on `tool()` / `resource()` to receive a typed `ctx.fail(reason, …)` keyed by the declared reason union. TypeScript catches `ctx.fail('typo')` at compile time, `data.reason` is auto-populated for observability, and the linter enforces conformance against the handler body. Baseline codes (`InternalError`, `ServiceUnavailable`, `Timeout`, `ValidationError`, `SerializationError`) bubble freely and don't need declaring.
+
+On the wire, tool errors mirror the success-path `format-parity` invariant — both `content[]` (markdown, read by clients like Claude Desktop) and `structuredContent.error` (JSON `{ code, message, data? }`, read by clients like Claude Code) carry the same payload, with `data.recovery.hint` mirrored into the markdown text when present.
 
 ```ts
 errors: [
@@ -344,7 +346,7 @@ import { getServerConfig } from '@/config/server-config.js';
 - [ ] JSDoc `@fileoverview` + `@module` on every file
 - [ ] `ctx.log` for logging, `ctx.state` for storage
 - [ ] Handlers throw on failure — error factories or plain `Error`, no try/catch
-- [ ] `format()` renders all data the LLM needs — `content[]` is the only field most clients forward to the model
+- [ ] `format()` renders all data the LLM needs — different clients forward different surfaces (Claude Code → `structuredContent`, Claude Desktop → `content[]`); both must carry the same data
 - [ ] Registered in `createApp()` arrays (directly or via barrel exports)
 - [ ] Tests use `createMockContext()` from `@cyanheads/mcp-ts-core/testing`
 - [ ] `bun run devcheck` passes

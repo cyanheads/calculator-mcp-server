@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.18 — 2026-04-29
+
+Patch release: framework bump `@cyanheads/mcp-ts-core` `0.8.0 → 0.8.3` plus opt-in to the new HTTP landing-page `repoRoot` config. No runtime API changes for callers of the `calculate` tool — its typed `errors[]` contract continues to surface via `result.structuredContent.error.{code, message, data.reason}` (now the canonical wire location after the framework's 0.8.3 error-shape cleanup).
+
+### Changed
+
+- **`createApp()` landing config** (`src/index.ts`) — declares `landing.repoRoot` (`https://github.com/cyanheads/calculator-mcp-server`) and a `tagline`. Activates the 0.8.2 status-strip GitHub link, auto-derives per-tool `sourceUrl` and the default `changelogUrl`, and sets the public-facing tagline on the HTTP landing page at [calculator.caseyjhand.com](https://calculator.caseyjhand.com/).
+- **Agent protocol files** (`CLAUDE.md`, `AGENTS.md`) — Errors section: removed the stale "advertise the failure surface in `tools/list` (under `_meta['mcp-ts-core/errors']`)" claim. The 0.8.3 release dropped that wire publication; contract-based ergonomics (typed `ctx.fail`, conformance lint) are unaffected. Added the error-path parity paragraph (`content[]` ↔ `structuredContent.error`). Refreshed the `format()` checklist line to match the structuredContent/content[] dual-surface invariant.
+
+### Meta
+
+- Bumped `@cyanheads/mcp-ts-core` to `0.8.3`. Field-tested the `calculate` tool against the live HTTP transport: happy path (evaluate, simplify, derivative), structured/text parity, and two contract reasons (`derivative_missing_variable` via `ctx.fail`, `undefined_result` via service-thrown `validationError`). All 42 unit tests pass.
+- Synced project skills from the package: `add-service` (1.3 → 1.4), `add-tool` (1.8 → 2.0), `api-errors` (1.0 → 1.1), `field-test` (2.0 → 2.2), `maintenance` (1.8 → 2.0). Refreshed `.claude/skills/` and `.agents/skills/` from `skills/`.
+- Filed [cyanheads/mcp-ts-core#86](https://github.com/cyanheads/mcp-ts-core/issues/86) — landing-page resource `sourceUrl` derivation embeds the URI host into the filename (e.g. `calculator help.resource.ts`), producing a 404 link. Tool source URLs are unaffected.
+- Bumped package, server metadata, README badge, and agent protocol files to `0.1.18`.
+
 ## 0.1.17 — 2026-04-28
 
 Patch release: natural-language ergonomics — the `calculate` tool now accepts `average`/`avg` as aliases for `mean`, and the `mph`, `knot`, and `lightyear` units (with their plurals and standard abbreviations). Closes [#5](https://github.com/cyanheads/calculator-mcp-server/issues/5) and [#6](https://github.com/cyanheads/calculator-mcp-server/issues/6).

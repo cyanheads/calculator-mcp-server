@@ -13,6 +13,11 @@ import { initMathService } from '@/services/math/math-service.js';
 await createApp({
   tools: [calculateTool],
   resources: [helpResource],
+  landing: {
+    repoRoot: 'https://github.com/cyanheads/calculator-mcp-server',
+    tagline:
+      'A hardened math.js calculator MCP server — evaluate, simplify, and differentiate expressions.',
+  },
   setup() {
     initMathService(getServerConfig());
   },
