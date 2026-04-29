@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.19 — 2026-04-29
+
+Patch release: fix the `view source ↗` link for the `calculator://help` resource on the HTTP landing page. The framework's auto-derivation builds the path from the definition name via `kebab-mirror`, which doesn't match URI-shaped resource names like `calculator://help` — the established override path is `sourceUrl` on the definition itself ([cyanheads/mcp-ts-core#42](https://github.com/cyanheads/mcp-ts-core/issues/42)), already adopted in `pubmed-mcp-server` on every tool. Calculator now does the same on the help resource.
+
+### Fixed
+
+- **`helpResource.sourceUrl`** (`src/mcp-server/resources/definitions/help.resource.ts`) — set explicitly to `https://github.com/cyanheads/calculator-mcp-server/blob/main/src/mcp-server/resources/definitions/help.resource.ts`. Replaces the framework auto-derived `.../calculator help.resource.ts` (URI host + path joined with a space) that 404'd on GitHub.
+
+### Meta
+
+- Closed [cyanheads/mcp-ts-core#86](https://github.com/cyanheads/mcp-ts-core/issues/86) as duplicate of [#42](https://github.com/cyanheads/mcp-ts-core/issues/42) — the override is the intended pattern, not a framework bug. The 0.1.18 CHANGELOG note mentioning #86 as a framework bug is superseded; treat that line as historical context rather than a current-state reference.
+- Bumped package, server metadata, README badge, and agent protocol files to `0.1.19`.
+
 ## 0.1.18 — 2026-04-29
 
 Patch release: framework bump `@cyanheads/mcp-ts-core` `0.8.0 → 0.8.3` plus opt-in to the new HTTP landing-page `repoRoot` config. No runtime API changes for callers of the `calculate` tool — its typed `errors[]` contract continues to surface via `result.structuredContent.error.{code, message, data.reason}` (now the canonical wire location after the framework's 0.8.3 error-shape cleanup).

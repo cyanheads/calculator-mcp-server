@@ -10,6 +10,10 @@ export const helpResource = resource('calculator://help', {
   name: 'Calculator Help',
   description: 'Available functions, operators, constants, and syntax reference.',
   mimeType: 'text/markdown',
+  // Override the auto-derived view-source URL — `calculator://help` doesn't
+  // kebab-mirror to `help.resource.ts`. See cyanheads/mcp-ts-core#42.
+  sourceUrl:
+    'https://github.com/cyanheads/calculator-mcp-server/blob/main/src/mcp-server/resources/definitions/help.resource.ts',
   handler() {
     return getMathService().getHelpContent();
   },
