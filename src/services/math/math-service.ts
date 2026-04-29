@@ -107,6 +107,21 @@ const BLOCKED_SCOPE_KEYS = new Set([
 ]);
 
 /**
+ * Rewrite integer factorial ratios (n! / m!, n >= m) to permutations(n, n-m)
+ * to avoid intermediate overflow. math.js permutations() computes the product
+ * n*(n-1)*...*(m+1) directly without materialising the full factorials.
+ * Only matches bare integer literals — symbolic expressions are left unchanged.
+ */
+function simplifyFactorialRatios(expr: string): string {
+  return expr.replace(/\b(\d+)!\s*\/\s*(\d+)!/g, (match, a, b) => {
+    const n = Number(a);
+    const m = Number(b);
+    if (n >= m) return `permutations(${n}, ${n - m})`;
+    return match;
+  });
+}
+
+/**
  * Check for expression separators outside square brackets.
  * Semicolons inside `[...]` are valid matrix row separators.
  * Newlines (`\n`, `\r`) are also expression separators in math.js.
@@ -172,6 +187,7 @@ export class MathService {
     scope?: Record<string, number>,
     precision?: number,
   ): MathResult {
+    expression = simplifyFactorialRatios(expression);
     this.validateInput(expression);
     if (scope) this.validateScope(scope);
     const raw = this.runWithTimeout(() =>
