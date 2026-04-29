@@ -301,7 +301,7 @@ describe('calculate tool', () => {
         maxResultLength: 5,
       });
       expectMcpError(
-        () => svc.evaluateExpression('123456789'),
+        () => svc.evaluateExpression('123456789', mockCtx()),
         JsonRpcErrorCode.ValidationError,
         'result_too_large',
       );
@@ -340,7 +340,7 @@ describe('calculate tool', () => {
         maxResultLength: 1_000_000,
       });
       expectMcpError(
-        () => svc.evaluateExpression('eigs(zeros(50, 50))'),
+        () => svc.evaluateExpression('eigs(zeros(50, 50))', mockCtx()),
         JsonRpcErrorCode.ServiceUnavailable,
         'evaluation_timeout',
       );

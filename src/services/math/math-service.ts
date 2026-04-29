@@ -6,6 +6,7 @@
  */
 
 import vm from 'node:vm';
+import type { Context } from '@cyanheads/mcp-ts-core';
 import { serviceUnavailable, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { all, create, type SimplifyRule, type UnitDefinition } from 'mathjs';
 import type { ServerConfig } from '@/config/server-config.js';
@@ -169,22 +170,24 @@ export class MathService {
   /** Evaluate a math expression with optional variable scope and precision. */
   evaluateExpression(
     expression: string,
+    ctx: Context,
     scope?: Record<string, number>,
     precision?: number,
   ): MathResult {
-    this.validateInput(expression);
-    if (scope) this.validateScope(scope);
-    const raw = this.runWithTimeout(() =>
-      scope ? this.evaluate(expression, scope) : this.evaluate(expression),
+    this.validateInput(expression, ctx);
+    if (scope) this.validateScope(scope, ctx);
+    const raw = this.runWithTimeout(
+      () => (scope ? this.evaluate(expression, scope) : this.evaluate(expression)),
+      ctx,
     );
     if (typeof raw === 'number' && !Number.isFinite(raw)) {
       throw validationError(
         `Expression evaluated to ${raw} — this typically means the operation is mathematically undefined (e.g., division by zero, log of zero). Check the expression.`,
-        { reason: 'undefined_result' },
+        { reason: 'undefined_result', ...ctx.recoveryFor('undefined_result') },
       );
     }
     const resultType = this.typeOf(raw);
-    this.validateResultType(resultType);
+    this.validateResultType(resultType, ctx);
     // Match JS Number.toString thresholds — math.js defaults to exp ≥ 5,
     // which would render 83810205 as "8.3810205e+7".
     const result = this.format(raw, {
@@ -192,25 +195,28 @@ export class MathService {
       upperExp: 21,
       ...(precision != null && { precision }),
     });
-    this.validateResultSize(result);
+    this.validateResultSize(result, ctx);
     return { result, resultType };
   }
 
   /** Simplify an algebraic expression symbolically. */
-  simplifyExpression(expression: string): MathResult {
-    this.validateInput(expression);
-    const simplified = this.runWithTimeout(() => this.simplify(expression, this.simplifyRules));
+  simplifyExpression(expression: string, ctx: Context): MathResult {
+    this.validateInput(expression, ctx);
+    const simplified = this.runWithTimeout(
+      () => this.simplify(expression, this.simplifyRules),
+      ctx,
+    );
     const result = simplified.toString();
-    this.validateResultSize(result);
+    this.validateResultSize(result, ctx);
     return { result, resultType: 'string' };
   }
 
   /** Compute the symbolic derivative of an expression with respect to a variable. */
-  differentiateExpression(expression: string, variable: string): MathResult {
-    this.validateInput(expression);
-    const derived = this.runWithTimeout(() => this.derivative(expression, variable));
+  differentiateExpression(expression: string, variable: string, ctx: Context): MathResult {
+    this.validateInput(expression, ctx);
+    const derived = this.runWithTimeout(() => this.derivative(expression, variable), ctx);
     const result = derived.toString();
-    this.validateResultSize(result);
+    this.validateResultSize(result, ctx);
     return { result, resultType: 'string' };
   }
 
@@ -219,60 +225,61 @@ export class MathService {
     return HELP_CONTENT;
   }
 
-  private validateInput(expression: string): void {
+  private validateInput(expression: string, ctx: Context): void {
     if (!expression.trim()) {
-      throw validationError('Expression cannot be empty.', { reason: 'empty_expression' });
+      throw validationError('Expression cannot be empty.', {
+        reason: 'empty_expression',
+        ...ctx.recoveryFor('empty_expression'),
+      });
     }
     if (expression.length > this.config.maxExpressionLength) {
       throw validationError(
         `Expression exceeds maximum length of ${this.config.maxExpressionLength} characters.`,
-        { reason: 'expression_too_long' },
+        { reason: 'expression_too_long', ...ctx.recoveryFor('expression_too_long') },
       );
     }
     if (hasExpressionSeparator(expression)) {
       throw validationError(
         'Multiple expressions are not allowed. Submit one expression per call.',
-        {
-          reason: 'multiple_expressions',
-        },
+        { reason: 'multiple_expressions', ...ctx.recoveryFor('multiple_expressions') },
       );
     }
   }
 
   /** Reject scope keys that could pollute the object prototype chain. */
-  private validateScope(scope: Record<string, number>): void {
+  private validateScope(scope: Record<string, number>, ctx: Context): void {
     for (const key of Object.keys(scope)) {
       if (BLOCKED_SCOPE_KEYS.has(key)) {
         throw validationError(
           `Scope key "${key}" is not allowed — it conflicts with a reserved property name.`,
-          { reason: 'reserved_scope_key' },
+          { reason: 'reserved_scope_key', ...ctx.recoveryFor('reserved_scope_key') },
         );
       }
     }
   }
 
   /** Reject result types that leak internals (functions, parsers, multi-expression ResultSets). */
-  private validateResultType(resultType: string): void {
+  private validateResultType(resultType: string, ctx: Context): void {
     if (BLOCKED_RESULT_TYPES.has(resultType)) {
       throw validationError(
         `Expression produced a ${resultType} — only numeric, string, matrix, complex, unit, and boolean results are allowed.`,
-        { reason: 'disallowed_result_type' },
+        { reason: 'disallowed_result_type', ...ctx.recoveryFor('disallowed_result_type') },
       );
     }
   }
 
   /** Reject results that exceed the configured maximum size. */
-  private validateResultSize(result: string): void {
+  private validateResultSize(result: string, ctx: Context): void {
     if (result.length > this.config.maxResultLength) {
       throw validationError(
         `Result exceeds maximum size (${this.config.maxResultLength} characters). Reduce matrix dimensions or simplify the expression.`,
-        { reason: 'result_too_large' },
+        { reason: 'result_too_large', ...ctx.recoveryFor('result_too_large') },
       );
     }
   }
 
   /** Runs a synchronous function inside a vm sandbox with timeout protection. */
-  private runWithTimeout<T>(fn: () => T): T {
+  private runWithTimeout<T>(fn: () => T, ctx: Context): T {
     const sandbox = { fn, result: undefined as T };
     const context = vm.createContext(sandbox);
     try {
@@ -282,12 +289,15 @@ export class MathService {
       if (err instanceof Error && 'code' in err && err.code === 'ERR_SCRIPT_EXECUTION_TIMEOUT') {
         throw serviceUnavailable(
           `Expression evaluation timed out after ${this.config.evaluationTimeoutMs / 1000} seconds. Simplify the expression or reduce matrix dimensions.`,
-          { reason: 'evaluation_timeout' },
+          { reason: 'evaluation_timeout', ...ctx.recoveryFor('evaluation_timeout') },
         );
       }
       // All non-timeout errors from the VM are expression-related
       const message = err instanceof Error ? err.message : String(err);
-      throw validationError(`Invalid expression: ${message}`, { reason: 'parse_failed' });
+      throw validationError(`Invalid expression: ${message}`, {
+        reason: 'parse_failed',
+        ...ctx.recoveryFor('parse_failed'),
+      });
     }
   }
 }

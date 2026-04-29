@@ -4,7 +4,7 @@ description: >
   McpError constructor, JsonRpcErrorCode reference, and error handling patterns for `@cyanheads/mcp-ts-core`. Use when looking up error codes, understanding where errors should be thrown vs. caught, or using ErrorHandler.tryCatch in services.
 metadata:
   author: cyanheads
-  version: "1.1"
+  version: "1.4"
   audience: external
   type: reference
 ---
@@ -37,11 +37,14 @@ export const fetchTool = tool('fetch_articles', {
 
   errors: [
     { reason: 'no_match', code: JsonRpcErrorCode.NotFound,
-      when: 'No requested PMID returned data' },
+      when: 'No requested PMID returned data',
+      recovery: 'Try pubmed_search_articles to discover valid PMIDs first.' },
     { reason: 'queue_full', code: JsonRpcErrorCode.RateLimited,
-      when: 'Local request queue is at capacity', retryable: true },
+      when: 'Local request queue is at capacity', retryable: true,
+      recovery: 'Wait 30 seconds and retry, or reduce batch size.' },
     { reason: 'ncbi_down', code: JsonRpcErrorCode.ServiceUnavailable,
-      when: 'NCBI E-utilities unreachable after retries', retryable: true },
+      when: 'NCBI E-utilities unreachable after retries', retryable: true,
+      recovery: 'NCBI is degraded; retry in a few minutes.' },
   ],
 
   async handler(input, ctx) {
@@ -61,8 +64,59 @@ export const fetchTool = tool('fetch_articles', {
 |:--------|:---------|
 | Compile time | `ctx.fail('typo')` is a TS error. Auto-completes declared reasons. |
 | Runtime | `ctx.fail(reason, msg?, data?, options?)` builds an `McpError(contract.code, msg, { ...data, reason }, options)` — `data.reason` is auto-populated from the contract and cannot be overridden by caller-supplied data (spread first, then `reason` written last), so observers see a stable identifier. `options` accepts `{ cause }` for ES2022 error chaining. |
-| Lint (startup) | Each `code` validated against `JsonRpcErrorCode`. Reasons validated as snake_case + unique within contract. |
+| Lint (startup) | Each `code` validated against `JsonRpcErrorCode`. Reasons validated as snake_case + unique within contract. `recovery` validated as non-empty and ≥ 5 words. |
 | Lint (conformance) | If the handler `throw new McpError(JsonRpcErrorCode.X)` outside `ctx.fail`, conformance check warns when X isn't declared. |
+
+> **`recovery` is opt-in resolution, not auto-population.** The contract `recovery` is required metadata documenting the agent's next move when this failure mode fires (a forcing function for thoughtful guidance — placeholders like "Try again." get flagged by the linter). It does **not** automatically appear in runtime `data.recovery.hint` — the framework never injects it without an explicit signal at the throw site. Authors opt in by spreading `ctx.recoveryFor('reason')` into the `data` argument, the same way `ctx.fail('reason')` opts into resolving the contract `code`. What the author types at the throw site is what flows to the wire, with no hidden transformation; the resolver is just a typed lookup keyed by the same `reason` the author already typed.
+
+#### `ctx.recoveryFor` — opt-in contract resolution
+
+`ctx.recoveryFor(reason)` returns `{ recovery: { hint: <contract.recovery> } }` for a declared reason, ready to spread into `data`. Always available on `Context` (returns `{}` when no contract is attached or the reason is unknown — spread-safe with no optional chaining). On `HandlerContext<R>` it tightens to a typed signature constrained to the declared reason union.
+
+```ts
+export const calculateTool = tool('calculate', {
+  // ...
+  errors: [
+    { reason: 'empty_expression', code: JsonRpcErrorCode.ValidationError,
+      when: 'Expression is empty or whitespace-only.',
+      recovery: 'Provide a non-empty mathematical expression to evaluate.' },
+  ],
+  handler(input, ctx) {
+    if (!input.expression.trim()) {
+      // Static recovery — resolve from the contract.
+      throw ctx.fail('empty_expression', undefined, { ...ctx.recoveryFor('empty_expression') });
+    }
+    // ...
+  },
+});
+```
+
+Same pattern works inside services that accept `ctx`:
+
+```ts
+export class MathService {
+  parse(expr: string, ctx: Context) {
+    try {
+      return mathjs.parse(expr);
+    } catch (err) {
+      throw validationError(`Parse failed: ${err.message}`, {
+        reason: 'parse_failed',
+        ...ctx.recoveryFor('parse_failed'),  // {} if calling tool has no matching reason
+      });
+    }
+  }
+}
+```
+
+The contract is the single source of truth — write the recovery once, lint validates ≥5 words, the resolver carries it to every throw site that opts in. For runtime-context recovery (interpolating input values, attempted IDs, queue state), override at the throw site:
+
+```ts
+throw ctx.fail('no_match', `No item ${id}`, {
+  recovery: { hint: `No item ${id}; try IDs 1-100 instead.` },
+});
+```
+
+`ctx.recoveryFor` is the first member of a planned **family of opt-in resolution helpers**. Future contract-bound fields (`troubleshootingFor`, `userMessageFor`, …) follow the same shape: single-purpose, spreadable wire-shape, `{}` fallback when not applicable.
 
 **Skip the contract** for one-off internal tools or quick prototypes — `ctx` is plain `Context` (no `fail`) and you throw via [factories](#error-factories-fallback) directly. Behavior is identical at the wire; the contract just adds compile-time safety.
 
@@ -81,12 +135,27 @@ throw serviceUnavailable('Upstream timeout',          { reason: 'evaluation_time
 ```ts
 // my-tool.tool.ts
 errors: [
-  { reason: 'empty_expression',   code: JsonRpcErrorCode.ValidationError,    when: 'Input is empty.' },
-  { reason: 'evaluation_timeout', code: JsonRpcErrorCode.ServiceUnavailable, when: 'Upstream exceeded the configured timeout.' },
+  { reason: 'empty_expression',   code: JsonRpcErrorCode.ValidationError,
+    when: 'Input is empty.',
+    recovery: 'Provide a non-empty expression to evaluate.' },
+  { reason: 'evaluation_timeout', code: JsonRpcErrorCode.ServiceUnavailable,
+    when: 'Upstream exceeded the configured timeout.',
+    recovery: 'Simplify the expression or retry the request after a brief delay.' },
 ]
 ```
 
 The handler doesn't catch and re-throw — letting service errors bubble unchanged keeps "logic throws, framework catches" intact. The wire payload still carries `code` + `data.reason`, and clients can switch on reason without parsing message text. What's lost is lint-time enforcement that every reason is reachable; compensate with one wire-shape test per reason.
+
+To carry the contract `recovery` from a service throw, accept `ctx` and spread the resolver:
+
+```ts
+throw validationError(message, {
+  reason: 'parse_failed',
+  ...ctx.recoveryFor('parse_failed'),  // {} when calling tool has no matching reason
+});
+```
+
+`ctx.recoveryFor` is always present on `Context` (no-op when no contract), so services don't need to know which tool called them — the spread is safe either way.
 
 ---
 
@@ -416,6 +485,9 @@ The linter validates the structure of `errors[]` and (when present) cross-checks
 | `error-contract-reason-format` | warning | `reason` not snake_case |
 | `error-contract-reason-unique` | error | Duplicate `reason` within one contract |
 | `error-contract-when-required` | error | `when` missing or empty |
+| `error-contract-recovery-required` | error | `recovery` missing or not a string |
+| `error-contract-recovery-empty` | error | `recovery` is empty/whitespace-only |
+| `error-contract-recovery-min-words` | warning | `recovery` has fewer than 5 words — placeholders like "Try again." or "Check input." get flagged in favor of specific guidance |
 | `error-contract-retryable-type` | warning | `retryable` is present but not a boolean |
 
 ### Conformance rules

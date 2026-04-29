@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.20 — 2026-04-29
+
+Patch release: framework bump `@cyanheads/mcp-ts-core` `0.8.3 → 0.8.5` and adopt the new typed `recovery` field on every entry of the `calculate` error contract. Each declared failure mode now carries an actionable hint that flows to the wire on `result.structuredContent.error.data.recovery.hint` and is mirrored into `result.content[0].text` as `Recovery: <hint>` — agents recovering from a `validationError` no longer have to infer the next move from the message alone.
+
+### Changed
+
+- **`calculate` typed error contract** (`src/mcp-server/tools/definitions/calculate.tool.ts`) — added the required `recovery` field to all 10 entries (`empty_expression`, `expression_too_long`, `multiple_expressions`, `reserved_scope_key`, `disallowed_result_type`, `result_too_large`, `undefined_result`, `parse_failed`, `derivative_missing_variable`, `evaluation_timeout`). The 0.8.5 framework lints `recovery` for length and presence on every contract entry.
+- **`MathService` recovery plumbing** (`src/services/math/math-service.ts`) — `evaluateExpression`, `simplifyExpression`, `differentiateExpression`, `validateInput`, `validateScope`, `validateResultType`, `validateResultSize`, and `runWithTimeout` now accept the request `Context` and spread `ctx.recoveryFor('reason')` into the `data` object on every service-thrown `validationError` / `serviceUnavailable`. The `derivative_missing_variable` `ctx.fail` site in the tool handler does the same. Test helpers updated to pass `mockCtx()` to the two direct service-layer calls in the wire-shape suite.
+
+### Meta
+
+- Bumped `@cyanheads/mcp-ts-core` to `0.8.5`.
+- Synced project skills from the package: `add-service` (1.4 → 1.5), `add-tool` (2.0 → 2.4), `api-context` (1.1 → 1.2), `api-errors` (1.1 → 1.4), `design-mcp-server` (2.7 → 2.8). Refreshed `.claude/skills/` and `.agents/skills/` from `skills/`.
+- Field-tested the live HTTP transport: happy paths (`evaluate`, `simplify`, `derivative`, `60 mph to m/s`, `average([...])`), `calculator://help` resource read, missing-required-arg Zod reject, and 5 contract-error reasons (`undefined_result`, `derivative_missing_variable`, `multiple_expressions`, `parse_failed`, `reserved_scope_key`). Verified `data.recovery.hint` populated on every error and mirrored into `content[0].text`. All 42 unit tests pass; devcheck clean.
+- Bumped package, server metadata, README badge, and agent protocol files to `0.1.20`.
+
 ## 0.1.19 — 2026-04-29
 
 Patch release: fix the `view source ↗` link for the `calculator://help` resource on the HTTP landing page. The framework's auto-derivation builds the path from the definition name via `kebab-mirror`, which doesn't match URI-shaped resource names like `calculator://help` — the established override path is `sourceUrl` on the definition itself ([cyanheads/mcp-ts-core#42](https://github.com/cyanheads/mcp-ts-core/issues/42)), already adopted in `pubmed-mcp-server` on every tool. Calculator now does the same on the help resource.

@@ -75,52 +75,67 @@ export const calculateTool = tool('calculate', {
       reason: 'empty_expression',
       code: JsonRpcErrorCode.ValidationError,
       when: 'Expression is empty or whitespace-only.',
+      recovery: 'Provide a non-empty math expression in the expression parameter.',
     },
     {
       reason: 'expression_too_long',
       code: JsonRpcErrorCode.ValidationError,
       when: 'Expression exceeds the configured max length (CALC_MAX_EXPRESSION_LENGTH).',
+      recovery: 'Shorten the expression or split it into multiple separate calls.',
     },
     {
       reason: 'multiple_expressions',
       code: JsonRpcErrorCode.ValidationError,
       when: 'Expression contains a separator (`;` or newline) outside matrix brackets.',
+      recovery: 'Send one expression per call; issue separate calls for each statement.',
     },
     {
       reason: 'reserved_scope_key',
       code: JsonRpcErrorCode.ValidationError,
       when: 'Scope contains a reserved JS property name (`__proto__`, `constructor`, etc.).',
+      recovery: 'Rename the variable to avoid reserved JavaScript property names.',
     },
     {
       reason: 'disallowed_result_type',
       code: JsonRpcErrorCode.ValidationError,
       when: 'Result type is function, parser, or multi-expression ResultSet — security guard.',
+      recovery:
+        'Rewrite the expression to produce a value (number, matrix, unit) instead of a function or parser.',
     },
     {
       reason: 'result_too_large',
       code: JsonRpcErrorCode.ValidationError,
       when: 'Stringified result exceeds the configured max size (CALC_MAX_RESULT_LENGTH).',
+      recovery:
+        'Reduce precision, narrow the input range, or compute smaller subproblems separately.',
     },
     {
       reason: 'undefined_result',
       code: JsonRpcErrorCode.ValidationError,
       when: 'Expression evaluated to Infinity, -Infinity, or NaN (e.g., division by zero).',
+      recovery:
+        'Check for division by zero, log of non-positive numbers, or other undefined operations.',
     },
     {
       reason: 'parse_failed',
       code: JsonRpcErrorCode.ValidationError,
       when: 'mathjs could not parse the expression.',
+      recovery:
+        'Check syntax for balanced parentheses, valid operators, and correct function names.',
     },
     {
       reason: 'derivative_missing_variable',
       code: JsonRpcErrorCode.ValidationError,
       when: '`operation` is `derivative` but `variable` was not provided.',
+      recovery: 'Pass the variable parameter (e.g., "x") when operation is "derivative".',
     },
     {
       reason: 'evaluation_timeout',
       code: JsonRpcErrorCode.ServiceUnavailable,
       when: 'Expression evaluation exceeded the configured timeout (CALC_EVALUATION_TIMEOUT_MS).',
       retryable: false,
+      recovery:
+        'Simplify the expression or reduce computational complexity to fit within the timeout.',
     },
   ],
 
@@ -133,19 +148,20 @@ export const calculateTool = tool('calculate', {
     switch (operation) {
       case 'evaluate':
         ctx.log.info('Evaluated expression', { expression });
-        return { ...math.evaluateExpression(expression, scope, precision), expression };
+        return { ...math.evaluateExpression(expression, ctx, scope, precision), expression };
       case 'simplify':
         ctx.log.info('Simplified expression', { expression });
-        return { ...math.simplifyExpression(expression), expression };
+        return { ...math.simplifyExpression(expression, ctx), expression };
       case 'derivative':
         if (!variable) {
           throw ctx.fail(
             'derivative_missing_variable',
             "The 'variable' parameter is required when operation is 'derivative'.",
+            { ...ctx.recoveryFor('derivative_missing_variable') },
           );
         }
         ctx.log.info('Differentiated expression', { expression, variable });
-        return { ...math.differentiateExpression(expression, variable), expression };
+        return { ...math.differentiateExpression(expression, variable, ctx), expression };
     }
   },
 
