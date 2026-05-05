@@ -4,7 +4,7 @@ description: >
   Exercise tools, resources, and prompts against a live HTTP server via MCP JSON-RPC over curl. Starts the server, surfaces the catalog, runs real and adversarial inputs, and produces a tight report with concrete findings and numbered follow-up options. Use after adding or modifying definitions, or when the user asks to test, try out, or verify their MCP surface.
 metadata:
   author: cyanheads
-  version: "2.2"
+  version: "2.3"
   audience: external
   type: debug
 ---
@@ -17,12 +17,9 @@ Unit tests (`add-test` skill) verify handler logic with mocked context. Field te
 
 ### Transport coverage
 
-This skill drives an HTTP server because curl + JSON-RPC is the most reliable harness for shell-based agents. Most servers ship both transports (`bun run dev:http` and `dev:stdio`), so HTTP coverage is sufficient: the same handler runs on both, only the framing differs. If the server is **stdio-only** (no HTTP transport in `package.json` / no `MCP_TRANSPORT_TYPE=http` path), drive it through one of:
+This skill drives an HTTP server because curl + JSON-RPC is the most reliable harness for shell-based agents. The same handlers run on both transports — only the framing differs — so HTTP exercises the full functional surface.
 
-- **MCP Inspector** (`npx @modelcontextprotocol/inspector bun run dev:stdio`) — interactive UI for catalog browsing and tool calls; best for hands-on exploration
-- **mcp-cli** (`uvx mcp-cli --stdio bun run dev:stdio`) — scriptable JSON-RPC client; best for batch/agentic testing
-
-Adapt the test plan below the same way — universal battery on every definition, situational categories only when triggered, same error-contract verification — but call the tools through the inspector / mcp-cli rather than `mcp_call`. Pino startup + handler logs land on stderr in stdio mode (stdout is reserved for JSON-RPC), so tail with `2>/tmp/mcp-server.log` if you start the server yourself.
+**Stdio coverage is a boot check only.** Run `bun run rebuild && bun run start:stdio`, confirm the startup logs look clean (banner, expected tool/resource counts, no errors/warnings, no missing-config gripes), then kill it. Pino logs go to stderr in stdio mode (stdout is reserved for JSON-RPC), so they print straight to the terminal when you run interactively. No need to call tools over stdio — the HTTP pass already covered handler behavior.
 
 ---
 
@@ -30,7 +27,7 @@ Adapt the test plan below the same way — universal battery on every definition
 
 ### 1. Start the server
 
-Write the helper to `/tmp/mcp-field-test.sh` once, then source it in every subsequent Bash call. Helper keeps PID / URL / session id in `/tmp/mcp-field-test.env` so state survives across tool invocations.
+Write the helper to `/tmp/mcp-field-test.sh` once, then source it in every subsequent Bash call. Helper keeps PID / URL / session id in a per-`$PWD` state file (`/tmp/mcp-field-test-<hash>.env`) so state survives across tool invocations and concurrent field-tests in different project trees don't clobber each other.
 
 ```bash
 cat > /tmp/mcp-field-test.sh <<'HELPER_EOF'
@@ -39,29 +36,36 @@ cat > /tmp/mcp-field-test.sh <<'HELPER_EOF'
 # Surfaces failures aggressively — field test is for finding things that fail,
 # so the helper auto-tails logs and prints HTTP status/body on errors instead
 # of swallowing them.
-STATE_FILE="/tmp/mcp-field-test.env"
+#
+# State and log paths are namespaced by an 8-char hash of $PWD so concurrent
+# field-tests across different project trees don't clobber each other (see
+# https://github.com/cyanheads/mcp-ts-core/issues/90).
+PREFIX="/tmp/mcp-field-test-$(printf '%s' "$PWD" | shasum | cut -c1-8)"
+STATE_FILE="${PREFIX}.env"
+BUILD_LOG="${PREFIX}-build.log"
+SERVER_LOG="${PREFIX}-server.log"
 [ -f "$STATE_FILE" ] && . "$STATE_FILE"
 
 mcp_start() {
   local dir="${1:-$PWD}"
   echo "building $dir ..."
-  if ! (cd "$dir" && bun run rebuild) >/tmp/mcp-build.log 2>&1; then
-    echo "BUILD FAILED — last 30 lines of /tmp/mcp-build.log:"
-    tail -30 /tmp/mcp-build.log
+  if ! (cd "$dir" && bun run rebuild) >"$BUILD_LOG" 2>&1; then
+    echo "BUILD FAILED — last 30 lines of $BUILD_LOG:"
+    tail -30 "$BUILD_LOG"
     return 1
   fi
   echo "starting server ..."
-  (cd "$dir" && bun run start:http) >/tmp/mcp-server.log 2>&1 &
+  (cd "$dir" && bun run start:http) >"$SERVER_LOG" 2>&1 &
   local pid=$!
   local line=""
   for _ in $(seq 1 40); do
-    line=$(grep -Eo 'listening at http://[^" ]+/mcp' /tmp/mcp-server.log | head -1)
+    line=$(grep -Eo 'listening at http://[^" ]+/mcp' "$SERVER_LOG" | head -1)
     [ -n "$line" ] && break
     sleep 0.25
   done
   if [ -z "$line" ]; then
-    echo "server failed to start within 10s — last 30 lines of /tmp/mcp-server.log:"
-    tail -30 /tmp/mcp-server.log
+    echo "server failed to start within 10s — last 30 lines of $SERVER_LOG:"
+    tail -30 "$SERVER_LOG"
     kill "$pid" 2>/dev/null
     return 1
   fi
@@ -78,13 +82,13 @@ EOF
 
 mcp_init() {
   [ -z "$MCP_URL" ] && { echo "run mcp_start first"; return 1; }
-  local hdr="/tmp/mcp-init-headers.txt"
-  local body_file="/tmp/mcp-init-body.txt"
+  local hdr="${PREFIX}-init-headers.txt"
+  local body_file="${PREFIX}-init-body.txt"
   local status
   status=$(curl -sS -D "$hdr" -o "$body_file" -w '%{http_code}' -X POST "$MCP_URL" \
     -H "Content-Type: application/json" \
     -H "Accept: application/json, text/event-stream" \
-    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"field-test","version":"2.1"}}}')
+    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"field-test","version":"2.3"}}}')
   local sid; sid=$(grep -i '^mcp-session-id:' "$hdr" | awk '{print $2}' | tr -d '\r\n')
   if [ -z "$sid" ]; then
     echo "init failed — HTTP $status, no Mcp-Session-Id header returned"
@@ -122,7 +126,7 @@ mcp_call() {
   else
     body=$(printf '{"jsonrpc":"2.0","id":%d,"method":"%s","params":%s}' "$RANDOM" "$method" "$params")
   fi
-  local resp_file="/tmp/mcp-call-body.txt"
+  local resp_file="${PREFIX}-call-body.txt"
   local status
   status=$(curl -sS -o "$resp_file" -w '%{http_code}' -X POST "$MCP_URL" \
     -H "Content-Type: application/json" \
@@ -144,11 +148,11 @@ mcp_call() {
 
 # Tail the server log. Useful when a call surprises you — pino startup banner,
 # definition lint diagnostics, request handler errors, upstream calls, and
-# rate-limit warnings live in /tmp/mcp-server.log.
+# rate-limit warnings live in the per-session server log.
 # Usage: mcp_log [N]   (default: 50 lines)
 mcp_log() {
   local n="${1:-50}"
-  tail -n "$n" /tmp/mcp-server.log
+  tail -n "$n" "$SERVER_LOG"
 }
 
 mcp_stop() {
@@ -257,7 +261,7 @@ Use `TaskCreate` — one task per definition. Mark complete as you go. Don't bat
 
 For each call, capture: input sent, response (trim huge payloads to files), whether `isError: true` appeared, anything surprising (slow response, parity drift, unhelpful text, crash).
 
-When a call surprises you — slow, hangs, returns terse output, surfaces an unhelpful error — run `. /tmp/mcp-field-test.sh && mcp_log` to tail the server log. The pino startup banner, request handler errors, upstream API call traces, and rate-limit warnings all land in `/tmp/mcp-server.log` rather than coming back through `mcp_call`. Don't guess at runtime behavior from response text alone.
+When a call surprises you — slow, hangs, returns terse output, surfaces an unhelpful error — run `. /tmp/mcp-field-test.sh && mcp_log` to tail the server log. The pino startup banner, request handler errors, upstream API call traces, and rate-limit warnings all land in the per-session server log (read via `mcp_log`) rather than coming back through `mcp_call`. Don't guess at runtime behavior from response text alone.
 
 **Interpreting responses**
 

@@ -341,7 +341,7 @@ describe('calculate tool', () => {
       });
       expectMcpError(
         () => svc.evaluateExpression('eigs(zeros(50, 50))', mockCtx()),
-        JsonRpcErrorCode.ServiceUnavailable,
+        JsonRpcErrorCode.Timeout,
         'evaluation_timeout',
       );
     });

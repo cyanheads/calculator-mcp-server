@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.21 — 2026-05-05
+
+Patch release: framework bump `@cyanheads/mcp-ts-core` `0.8.5 → 0.8.15` and reclassify the `evaluation_timeout` failure mode from `ServiceUnavailable` (`-32000`) to `Timeout` (`-32004`). The vm sandbox abort is a timeout — not an upstream service availability problem — so the wire code now matches the semantics. Observability dashboards keyed on `mcp_error_classified_code` will group these under `Server: Timeout` instead of `Server: ServiceUnavailable`; clients shouldn't retry (`retryable: false` is unchanged).
+
+### Changed
+
+- **`calculate` typed error contract** (`src/mcp-server/tools/definitions/calculate.tool.ts`) — `evaluation_timeout` entry's `code` switched from `JsonRpcErrorCode.ServiceUnavailable` to `JsonRpcErrorCode.Timeout`. `when` and `recovery` unchanged.
+- **`MathService.runWithTimeout`** (`src/services/math/math-service.ts`) — vm-script-timeout branch now throws via the `timeout()` factory instead of `serviceUnavailable()`. Import swapped accordingly. Wire-shape conformance test for `evaluation_timeout` updated to assert `JsonRpcErrorCode.Timeout`.
+
+### Internal
+
+- **`runWithTimeout` simplification** (`src/services/math/math-service.ts`) — dropped the redundant `vm.createContext(sandbox)` call. `vm.runInNewContext()` contextifies its sandbox argument internally; the intermediate variable was a no-op alias.
+
+### Meta
+
+- Bumped `@cyanheads/mcp-ts-core` to `0.8.15`, `@biomejs/biome` to `2.4.14`, `tsc-alias` to `1.8.17`.
+- Removed unused `dev:stdio` / `dev:http` watch scripts from `package.json` per framework `0.8.6` / `0.8.7` cleanup.
+- Synced project skills from the package: `add-tool` (2.4 → 2.8), `api-config` (1.2 → 1.3), `api-errors` (1.4 → 1.5), `api-workers` (1.1 → 1.3), `design-mcp-server` (2.8 → 2.10), `field-test` (2.2 → 2.3), `report-issue-framework` (1.4 → 1.5), `report-issue-local` (1.3 → 1.4), `security-pass` (1.2 → 1.3). Added `api-canvas` (1.2) and `tool-defs-analysis` (1.0). Refreshed `.claude/skills/` and `.agents/skills/` from `skills/`.
+- **Agent protocol files** (`CLAUDE.md`, `AGENTS.md`) — added the "Declare contracts inline on each tool" guidance to the Errors section, added `api-canvas` and `tool-defs-analysis` rows to the skills table, and dropped the removed `dev:stdio` / `dev:http` rows from the Commands table.
+- Bumped package, server metadata, README badge, and agent protocol files to `0.1.21`.
+
 ## 0.1.20 — 2026-04-29
 
 Patch release: framework bump `@cyanheads/mcp-ts-core` `0.8.3 → 0.8.5` and adopt the new typed `recovery` field on every entry of the `calculate` error contract. Each declared failure mode now carries an actionable hint that flows to the wire on `result.structuredContent.error.data.recovery.hint` and is mirrored into `result.content[0].text` as `Recovery: <hint>` — agents recovering from a `validationError` no longer have to infer the next move from the message alone.

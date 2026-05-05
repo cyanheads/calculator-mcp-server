@@ -7,7 +7,7 @@
 
 import vm from 'node:vm';
 import type { Context } from '@cyanheads/mcp-ts-core';
-import { serviceUnavailable, validationError } from '@cyanheads/mcp-ts-core/errors';
+import { timeout, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { all, create, type SimplifyRule, type UnitDefinition } from 'mathjs';
 import type { ServerConfig } from '@/config/server-config.js';
 import type { MathResult } from './types.js';
@@ -281,13 +281,12 @@ export class MathService {
   /** Runs a synchronous function inside a vm sandbox with timeout protection. */
   private runWithTimeout<T>(fn: () => T, ctx: Context): T {
     const sandbox = { fn, result: undefined as T };
-    const context = vm.createContext(sandbox);
     try {
-      vm.runInNewContext('result = fn()', context, { timeout: this.config.evaluationTimeoutMs });
+      vm.runInNewContext('result = fn()', sandbox, { timeout: this.config.evaluationTimeoutMs });
       return sandbox.result;
     } catch (err) {
       if (err instanceof Error && 'code' in err && err.code === 'ERR_SCRIPT_EXECUTION_TIMEOUT') {
-        throw serviceUnavailable(
+        throw timeout(
           `Expression evaluation timed out after ${this.config.evaluationTimeoutMs / 1000} seconds. Simplify the expression or reduce matrix dimensions.`,
           { reason: 'evaluation_timeout', ...ctx.recoveryFor('evaluation_timeout') },
         );

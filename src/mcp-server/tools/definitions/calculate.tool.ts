@@ -131,7 +131,7 @@ export const calculateTool = tool('calculate', {
     },
     {
       reason: 'evaluation_timeout',
-      code: JsonRpcErrorCode.ServiceUnavailable,
+      code: JsonRpcErrorCode.Timeout,
       when: 'Expression evaluation exceeded the configured timeout (CALC_EVALUATION_TIMEOUT_MS).',
       retryable: false,
       recovery:
