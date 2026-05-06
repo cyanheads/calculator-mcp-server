@@ -346,4 +346,68 @@ describe('calculate tool', () => {
       );
     });
   });
+
+  describe('factorial overflow — issue #7', () => {
+    it('evaluates 10000!/9999! correctly via pre-simplification (no overflow)', async () => {
+      // Without the fix, 10000! overflows to Infinity and Infinity/Infinity = NaN.
+      const result = await call({ expression: '10000! / 9999!' });
+      expect(result.result).toBe('10000');
+      expect(result.resultType).toBe('number');
+    });
+
+    it('evaluates 100!/98! (= 100 * 99 = 9900) correctly', async () => {
+      const result = await call({ expression: '100! / 98!' });
+      expect(result.result).toBe('9900');
+    });
+
+    it('handles equal factorials (n!/n! = 1)', async () => {
+      const result = await call({ expression: '5! / 5!' });
+      expect(result.result).toBe('1');
+    });
+
+    it('handles small factorials normally (no pre-simplification needed)', async () => {
+      const result = await call({ expression: '5! / 2!' });
+      expect(result.result).toBe('60');
+    });
+  });
+
+  describe('numericType parameter', () => {
+    it('defaults to number type', async () => {
+      const result = await call({ expression: '2 + 2' });
+      expect(result.resultType).toBe('number');
+    });
+
+    it('BigNumber: evaluates with arbitrary precision', async () => {
+      const result = await call({ expression: '0.1 + 0.2', numericType: 'BigNumber' });
+      expect(result.resultType).toBe('BigNumber');
+      expect(result.result).toBe('0.3');
+    });
+
+    it('BigNumber: handles very large exponents without overflow', async () => {
+      const result = await call({ expression: '2^1000', numericType: 'BigNumber' });
+      expect(result.resultType).toBe('BigNumber');
+      expect(result.result).toMatch(/^1\.071509/);
+    });
+
+    it('Fraction: evaluates with exact rational arithmetic', async () => {
+      const result = await call({ expression: '1/3 + 1/6', numericType: 'Fraction' });
+      expect(result.resultType).toBe('Fraction');
+      expect(result.result).toBe('1/2');
+    });
+
+    it('Fraction: 0.1 + 0.2 is exactly 3/10', async () => {
+      const result = await call({ expression: '0.1 + 0.2', numericType: 'Fraction' });
+      expect(result.resultType).toBe('Fraction');
+      expect(result.result).toBe('3/10');
+    });
+
+    it('numericType is ignored for simplify operation', async () => {
+      const result = await call({
+        expression: '2x + 3x',
+        operation: 'simplify',
+        numericType: 'BigNumber',
+      });
+      expect(result.resultType).toBe('string');
+    });
+  });
 });
