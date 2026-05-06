@@ -6,7 +6,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { getMathService } from '@/services/math/math-service.js';
+import { getMathService, type NumericType } from '@/services/math/math-service.js';
 
 export const calculateTool = tool('calculate', {
   description:
@@ -59,6 +59,13 @@ export const calculateTool = tool('calculate', {
       .optional()
       .describe(
         'Significant digits (1–16) for numeric results. Omit for full precision. Empty string is treated as omitted. Ignored for symbolic operations (simplify, derivative).',
+      ),
+    numericType: z
+      .enum(['number', 'BigNumber', 'Fraction'])
+      .default('number')
+      .optional()
+      .describe(
+        'Numeric type for evaluation. "number" (default) uses 64-bit floats — fast, sufficient for most calculations. "BigNumber" uses arbitrary-precision arithmetic — use when an expression overflows to Infinity or NaN (e.g. very large exponents or factorials). "Fraction" uses exact rational arithmetic — use for precise fractional results without floating-point rounding. Ignored for symbolic operations (simplify, derivative).',
       ),
   }),
   output: z.object({
@@ -144,11 +151,12 @@ export const calculateTool = tool('calculate', {
     const { expression, operation, scope } = input;
     const variable = input.variable || undefined;
     const precision = typeof input.precision === 'number' ? input.precision : undefined;
+    const numericType = (input.numericType ?? 'number') as NumericType;
 
     switch (operation) {
       case 'evaluate':
-        ctx.log.info('Evaluated expression', { expression });
-        return { ...math.evaluateExpression(expression, ctx, scope, precision), expression };
+        ctx.log.info('Evaluated expression', { expression, numericType });
+        return { ...math.evaluateExpression(expression, ctx, scope, precision, numericType), expression };
       case 'simplify':
         ctx.log.info('Simplified expression', { expression });
         return { ...math.simplifyExpression(expression, ctx), expression };

@@ -108,6 +108,57 @@ const BLOCKED_SCOPE_KEYS = new Set([
 ]);
 
 /**
+ * Rewrite integer factorial ratios (n! / m!, n ≥ m) to permutations(n, n-m).
+ * math.js permutations() computes the product n*(n-1)*...*(m+1) directly,
+ * avoiding the intermediate factorial that would overflow to Infinity.
+ * Only matches bare integer literals — symbolic expressions are left unchanged.
+ */
+function simplifyFactorialRatios(expr: string): string {
+  return expr.replace(/\b(\d+)!\s*\/\s*(\d+)!/g, (match, a, b) => {
+    const n = Number(a);
+    const m = Number(b);
+    if (n >= m) return `permutations(${n}, ${n - m})`;
+    return match;
+  });
+}
+
+/** Numeric type for math.js instance creation. */
+export type NumericType = 'number' | 'BigNumber' | 'Fraction';
+
+interface HardenedMathHandles {
+  evaluate: (expr: string, scope?: Record<string, number>) => unknown;
+  format: (value: unknown, options?: { precision?: number; lowerExp?: number; upperExp?: number }) => string;
+  typeOf: (value: unknown) => string;
+}
+
+/**
+ * Creates a security-hardened math.js instance with a specific numeric type.
+ * Extracted so BigNumber and Fraction instances share the same restrictions.
+ */
+function createHardenedMath(numberType: NumericType = 'number'): HardenedMathHandles {
+  // biome-ignore lint/style/noNonNullAssertion: math.js types declare `all` as potentially undefined, but it's always defined at runtime
+  const math = create(all!, { number: numberType });
+
+  math.createUnit(CUSTOM_UNITS);
+  math.import({ average: math.mean, avg: math.mean });
+
+  const disabled: Record<string, unknown> = {};
+  for (const fn of DISABLED_FUNCTIONS) {
+    disabled[fn] = () => { throw new Error(`Function "${fn}" is disabled for security.`); };
+  }
+  for (const [key, value] of Object.entries(REDACTED_CONSTANTS)) {
+    disabled[key] = value;
+  }
+  math.import(disabled, { override: true });
+
+  return {
+    evaluate: math.evaluate.bind(math),
+    format: math.format.bind(math),
+    typeOf: math.typeOf.bind(math),
+  };
+}
+
+/**
  * Check for expression separators outside square brackets.
  * Semicolons inside `[...]` are valid matrix row separators.
  * Newlines (`\n`, `\r`) are also expression separators in math.js.
@@ -125,59 +176,73 @@ function hasExpressionSeparator(expr: string): boolean {
 
 export class MathService {
   private readonly evaluate: (expr: string, scope?: Record<string, number>) => unknown;
+  private readonly evaluateBigNumber: (expr: string, scope?: Record<string, number>) => unknown;
+  private readonly evaluateFraction: (expr: string, scope?: Record<string, number>) => unknown;
   private readonly simplify: (expr: string, rules?: SimplifyRule[]) => { toString(): string };
   private readonly derivative: (expr: string, variable: string) => { toString(): string };
   private readonly simplifyRules: SimplifyRule[];
-  private readonly format: (
-    value: unknown,
-    options?: { precision?: number; lowerExp?: number; upperExp?: number },
-  ) => string;
+  private readonly format: (value: unknown, options?: { precision?: number; lowerExp?: number; upperExp?: number }) => string;
+  private readonly formatBigNumber: (value: unknown, options?: { precision?: number; lowerExp?: number; upperExp?: number }) => string;
+  private readonly formatFraction: (value: unknown, options?: { precision?: number; lowerExp?: number; upperExp?: number }) => string;
   private readonly typeOf: (value: unknown) => string;
+  private readonly typeOfBigNumber: (value: unknown) => string;
+  private readonly typeOfFraction: (value: unknown) => string;
   private readonly config: ServerConfig;
 
   constructor(config: ServerConfig) {
     this.config = config;
+
+    // Default 'number' instance (64-bit float) — used for all standard evaluations
+    const defaultMath = createHardenedMath('number');
+    this.evaluate = defaultMath.evaluate;
+    this.format = defaultMath.format;
+    this.typeOf = defaultMath.typeOf;
+
+    // Opt-in BigNumber instance — arbitrary precision, no overflow on large factorials
+    const bigNumberMath = createHardenedMath('BigNumber');
+    this.evaluateBigNumber = bigNumberMath.evaluate;
+    this.formatBigNumber = bigNumberMath.format;
+    this.typeOfBigNumber = bigNumberMath.typeOf;
+
+    // Opt-in Fraction instance — exact rational arithmetic
+    const fractionMath = createHardenedMath('Fraction');
+    this.evaluateFraction = fractionMath.evaluate;
+    this.formatFraction = fractionMath.format;
+    this.typeOfFraction = fractionMath.typeOf;
+
     // biome-ignore lint/style/noNonNullAssertion: math.js types declare `all` as potentially undefined, but it's always defined at runtime
     const math = create(all!);
-
-    // Save references before overriding — these bypass the expression scope restrictions
-    this.evaluate = math.evaluate.bind(math);
     this.simplify = math.simplify.bind(math);
     this.derivative = math.derivative.bind(math);
     this.simplifyRules = [...math.simplify.rules, ...TRIG_SIMPLIFY_RULES];
-    this.format = math.format.bind(math);
-    this.typeOf = math.typeOf.bind(math);
-
-    // Register custom units and natural-language function aliases.
-    // Must run before createUnit/import are disabled below.
-    math.createUnit(CUSTOM_UNITS);
-    math.import({ average: math.mean, avg: math.mean });
-
-    // Disable dangerous functions in expression scope
-    const disabled: Record<string, unknown> = {};
-    for (const fn of DISABLED_FUNCTIONS) {
-      disabled[fn] = () => {
-        throw new Error(`Function "${fn}" is disabled for security.`);
-      };
-    }
-    // Redact constants that leak implementation details
-    for (const [key, value] of Object.entries(REDACTED_CONSTANTS)) {
-      disabled[key] = value;
-    }
-    math.import(disabled, { override: true });
   }
 
-  /** Evaluate a math expression with optional variable scope and precision. */
+  /** Evaluate a math expression with optional variable scope, precision, and numeric type. */
   evaluateExpression(
     expression: string,
     ctx: Context,
     scope?: Record<string, number>,
     precision?: number,
+    numericType: NumericType = 'number',
   ): MathResult {
+    // Pre-simplify bare factorial ratios (e.g. 10000!/9999! → permutations(10000,1))
+    // before evaluation to avoid intermediate overflow even in 'number' mode.
+    expression = simplifyFactorialRatios(expression);
     this.validateInput(expression, ctx);
     if (scope) this.validateScope(scope, ctx);
+
+    const evalFn = numericType === 'BigNumber' ? this.evaluateBigNumber
+                 : numericType === 'Fraction'  ? this.evaluateFraction
+                 : this.evaluate;
+    const formatFn = numericType === 'BigNumber' ? this.formatBigNumber
+                   : numericType === 'Fraction'  ? this.formatFraction
+                   : this.format;
+    const typeOfFn = numericType === 'BigNumber' ? this.typeOfBigNumber
+                   : numericType === 'Fraction'  ? this.typeOfFraction
+                   : this.typeOf;
+
     const raw = this.runWithTimeout(
-      () => (scope ? this.evaluate(expression, scope) : this.evaluate(expression)),
+      () => (scope ? evalFn(expression, scope) : evalFn(expression)),
       ctx,
     );
     if (typeof raw === 'number' && !Number.isFinite(raw)) {
@@ -186,11 +251,11 @@ export class MathService {
         { reason: 'undefined_result', ...ctx.recoveryFor('undefined_result') },
       );
     }
-    const resultType = this.typeOf(raw);
+    const resultType = typeOfFn(raw);
     this.validateResultType(resultType, ctx);
     // Match JS Number.toString thresholds — math.js defaults to exp ≥ 5,
     // which would render 83810205 as "8.3810205e+7".
-    const result = this.format(raw, {
+    const result = formatFn(raw, {
       lowerExp: -6,
       upperExp: 21,
       ...(precision != null && { precision }),
