@@ -1,6 +1,6 @@
 # calculator-mcp-server - Directory Structure
 
-Generated on: 2026-04-29 19:15:13
+Generated on: 2026-05-16 17:31:11
 
 ```text
 calculator-mcp-server/
@@ -15,6 +15,9 @@ calculator-mcp-server/
 ├── .vscode/
 │   ├── extensions.json
 │   └── settings.json
+├── changelog/
+│   ├── 0.1.x/
+│   └── template.md
 ├── claude-plans/
 ├── docs/
 ├── scripts/
@@ -43,6 +46,8 @@ calculator-mcp-server/
 │   │   └── SKILL.md
 │   ├── api-auth/
 │   │   └── SKILL.md
+│   ├── api-canvas/
+│   │   └── SKILL.md
 │   ├── api-config/
 │   │   └── SKILL.md
 │   ├── api-context/
@@ -56,6 +61,8 @@ calculator-mcp-server/
 │   │   │   ├── graph.md
 │   │   │   ├── llm.md
 │   │   │   └── speech.md
+│   │   └── SKILL.md
+│   ├── api-telemetry/
 │   │   └── SKILL.md
 │   ├── api-testing/
 │   │   └── SKILL.md
@@ -92,7 +99,9 @@ calculator-mcp-server/
 │   │   └── SKILL.md
 │   ├── security-pass/
 │   │   └── SKILL.md
-│   └── setup/
+│   ├── setup/
+│   │   └── SKILL.md
+│   └── tool-defs-analysis/
 │       └── SKILL.md
 ├── src/
 │   ├── config/
