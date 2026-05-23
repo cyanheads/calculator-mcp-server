@@ -1,0 +1,57 @@
+{
+  "manifest_version": "0.3",
+  "name": "calculator-mcp-server",
+  "version": "0.1.23",
+  "description": "Evaluate, simplify, and differentiate mathematical expressions via MCP.",
+  "author": { "name": "cyanheads" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cyanheads/calculator-mcp-server"
+  },
+  "homepage": "https://github.com/cyanheads/calculator-mcp-server#readme",
+  "license": "Apache-2.0",
+  "server": {
+    "type": "node",
+    "entry_point": "dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/index.js"],
+      "env": {
+        "MCP_TRANSPORT_TYPE": "stdio",
+        "MCP_AUTH_MODE": "none",
+        "NODE_ENV": "production",
+        "CALC_MAX_EXPRESSION_LENGTH": "${user_config.calc_max_expression_length}",
+        "CALC_EVALUATION_TIMEOUT_MS": "${user_config.calc_evaluation_timeout_ms}",
+        "CALC_MAX_RESULT_LENGTH": "${user_config.calc_max_result_length}"
+      }
+    }
+  },
+  "compatibility": {
+    "runtimes": { "node": ">=24.0.0" }
+  },
+  "tools_generated": true,
+  "prompts_generated": true,
+  "user_config": {
+    "calc_max_expression_length": {
+      "type": "string",
+      "title": "Max Expression Length",
+      "description": "Maximum allowed expression string length.",
+      "required": false,
+      "default": "1000"
+    },
+    "calc_evaluation_timeout_ms": {
+      "type": "string",
+      "title": "Evaluation Timeout (ms)",
+      "description": "Maximum evaluation time in milliseconds.",
+      "required": false,
+      "default": "5000"
+    },
+    "calc_max_result_length": {
+      "type": "string",
+      "title": "Max Result Length",
+      "description": "Maximum result string length in characters.",
+      "required": false,
+      "default": "100000"
+    }
+  }
+}
