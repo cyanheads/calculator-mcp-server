@@ -162,6 +162,8 @@ export const calculateTool = tool('calculate', {
         }
         ctx.log.info('Differentiated expression', { expression, variable });
         return { ...math.differentiateExpression(expression, variable, ctx), expression };
+      default:
+        throw new Error(`Unhandled operation: ${operation as string}`);
     }
   },
 

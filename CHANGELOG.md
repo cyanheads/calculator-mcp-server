@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.23](changelog/0.1.x/0.1.23.md) — 2026-05-22
+
+Framework `@cyanheads/mcp-ts-core` `^0.9.1 → ^0.9.4`. Explicit `zod` dep (peerDep change in 0.9.2). New scripts: `audit:refresh`, `list-skills`, `lint:packaging`, `bundle`, `changelog:build`, `changelog:check`. TypeScript exhaustiveness fix in `calculate.tool.ts`.
+
 ## [0.1.22](changelog/0.1.x/0.1.22.md) — 2026-05-16
 
 Framework bump `@cyanheads/mcp-ts-core` 0.8.15 → 0.9.1. Adopt the new `instructions` field on `createApp()` — server-level orientation now flows to every `initialize` response. Engines: Node ≥24.0.0, Bun ≥1.3.0. CHANGELOG.md migrated to per-version files under `changelog/0.1.x/`.

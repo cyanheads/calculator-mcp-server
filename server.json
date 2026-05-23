@@ -1,12 +1,12 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.cyanheads/calculator-mcp-server",
-  "description": "Calculator MCP server — evaluate, simplify, and differentiate math expressions.",
+  "description": "Evaluate, simplify, and differentiate mathematical expressions.",
   "repository": {
     "url": "https://github.com/cyanheads/calculator-mcp-server",
     "source": "github"
   },
-  "version": "0.1.22",
+  "version": "0.1.23",
   "remotes": [
     {
       "type": "streamable-http",
@@ -19,7 +19,7 @@
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cyanheads/calculator-mcp-server",
       "runtimeHint": "bun",
-      "version": "0.1.22",
+      "version": "0.1.23",
       "packageArguments": [
         {
           "type": "positional",
@@ -69,7 +69,7 @@
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cyanheads/calculator-mcp-server",
       "runtimeHint": "bun",
-      "version": "0.1.22",
+      "version": "0.1.23",
       "packageArguments": [
         {
           "type": "positional",

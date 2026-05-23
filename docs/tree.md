@@ -1,6 +1,6 @@
 # calculator-mcp-server - Directory Structure
 
-Generated on: 2026-05-16 17:31:11
+Generated on: 2026-05-23 06:45:56
 
 ```text
 calculator-mcp-server/
@@ -28,9 +28,14 @@ calculator-mcp-server/
 │   ├── check-skills-sync.ts
 │   ├── clean.ts
 │   ├── devcheck.ts
+│   ├── devdocs.ts
+│   ├── fetch-openapi-spec.ts
 │   ├── lint-mcp.ts
+│   ├── lint-packaging.ts
+│   ├── list-skills.ts
 │   ├── split-changelog.ts
-│   └── tree.ts
+│   ├── tree.ts
+│   └── update-coverage.ts
 ├── skills/
 │   ├── add-app-tool/
 │   │   └── SKILL.md

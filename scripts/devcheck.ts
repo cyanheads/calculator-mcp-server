@@ -417,6 +417,20 @@ const ALL_CHECKS: Check[] = [
       `Fix definition errors above — each diagnostic links to its rule in ${c.bold('skills/api-linter/SKILL.md')}.`,
   },
   {
+    name: 'Packaging',
+    flag: '--no-packaging',
+    canFix: false,
+    // Validates env var alignment between manifest.json (MCPB bundle) and
+    // server.json (MCP Registry). Skipped cleanly when manifest.json is absent
+    // — consumers who deleted it for an HTTP-only deploy are unaffected.
+    getCommand: () => {
+      if (!existsSync(path.join(ROOT_DIR, 'manifest.json'))) return null;
+      return ['bun', 'run', 'scripts/lint-packaging.ts'];
+    },
+    tip: (c) =>
+      `Align env var names between ${c.bold('manifest.json')} ${c.bold('mcp_config.env')} and ${c.bold('server.json')} stdio package ${c.bold('environmentVariables[]')}.`,
+  },
+  {
     name: 'Framework Antipatterns',
     flag: '--no-framework-antipatterns',
     canFix: false,
@@ -595,17 +609,24 @@ const ALL_CHECKS: Check[] = [
       // (`| col1 | col2 | ... |`), so split('|') yields an empty leading cell —
       // package data starts at index [1]. Strip the trailing `(dev|peer|prod|optional)`
       // workspace-type marker so the allowlist takes the bare package name.
+      const lines = output.split('\n');
       const stripWorkspaceMarker = (cell: string): string =>
         cell.replace(/\s*\((?:dev|peer|prod|optional)\)$/, '');
-      const packageNames = output.split('\n').flatMap((line) => {
-        if (!line.includes('|')) return [];
-        const cell = line.split('|')[1]?.trim() ?? '';
+      const packageLines = lines.filter((line) => {
+        if (!line.includes('|')) return false;
         // Skip table chrome: header row and separator (e.g., "---")
-        if (!cell || cell === 'Package' || /^-+$/.test(cell)) return [];
-        return [stripWorkspaceMarker(cell)];
+        const firstCell = line.split('|')[1]?.trim() ?? '';
+        if (!firstCell || firstCell === 'Package' || /^-+$/.test(firstCell)) return false;
+        return true;
       });
 
-      return packageNames.every((name) => OUTDATED_ALLOWLIST.has(name));
+      // Check if every outdated package is in the allowlist
+      const unexpected = packageLines.filter((line) => {
+        const pkgName = stripWorkspaceMarker(line.split('|')[1]?.trim() ?? '');
+        return !OUTDATED_ALLOWLIST.has(pkgName);
+      });
+
+      return unexpected.length === 0;
     },
     tip: (c) =>
       `Run ${c.bold(`${PM_CMD} update`)} to upgrade; the ${c.bold('maintenance')} skill then investigates changelogs and adopts upstream changes. Configure allowlist in ${c.bold('devcheck.config.json')}.`,
@@ -911,6 +932,19 @@ async function runCheck(check: Check, ctx: AppContext): Promise<CommandResult> {
   const startTime = performance.now();
   const result = await Shell.exec(command, { cwd: ctx.rootDir });
   const duration = Math.round(performance.now() - startTime);
+
+  // Bun's node-shim (via `bun run`) emits "Registry URL must be" errors when
+  // depcheck encounters `cloudflare:*` virtual-module specifiers in Workers
+  // tests. depcheck.ignores already filters them from the report — strip the
+  // cosmetic stderr so the summary stays clean.
+  if (name === 'Unused Dependencies' && result.stderr) {
+    result.stderr = result.stderr
+      .replace(
+        /error: Registry URL must be http:\/\/ or https:\/\/\nReceived: "cloudflare:[^"]*"\n?/g,
+        '',
+      )
+      .trim();
+  }
 
   const finalResult: CommandResult = {
     ...baseResult,

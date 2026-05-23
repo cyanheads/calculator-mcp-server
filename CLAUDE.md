@@ -1,8 +1,11 @@
 # Agent Protocol
 
 **Server:** calculator-mcp-server
-**Version:** 0.1.22
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
+**Version:** 0.1.23
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.9.4`
+**Engines:** Bun ≥1.3.0, Node ≥24.0.0
+**MCP SDK:** `@modelcontextprotocol/sdk` 1.29.0
+**Zod:** 4.4.3
 
 > **Read the framework docs first:** `node_modules/@cyanheads/mcp-ts-core/CLAUDE.md` contains the full API reference — builders, Context, error codes, exports, patterns. This file covers server-specific conventions only.
 
@@ -36,7 +39,7 @@ When the user asks what to do next, what's left, or needs direction, suggest rel
 8. **Run the `security-pass` skill** — audit handlers for MCP-specific security gaps (injection, blast radius, input sinks, tenant isolation)
 9. **Run the `polish-docs-meta` skill** — finalize README, CHANGELOG, metadata, and agent protocol for shipping
 10. **Run the `release-and-publish` skill** — publish to npm + MCP Registry + GHCR after wrapup
-11. **Run the `maintenance` skill** — sync skills and dependencies after framework updates
+11. **Run the `maintenance` skill** — investigate changelogs, adopt upstream changes, and sync skills after `bun update --latest`
 
 Tailor suggestions to what's actually missing or stale — don't recite the full list every time.
 
@@ -239,7 +242,7 @@ src/
 
 Skills are modular instructions in `skills/` at the project root. Read them directly when a task matches — e.g., `skills/add-tool/SKILL.md` when adding a tool.
 
-**Agent skill directory:** Copy skills into the directory your agent discovers (Claude Code: `.claude/skills/`, others: equivalent). This makes skills available as context without needing to reference `skills/` paths manually. After framework updates, run the `maintenance` skill — it re-syncs the agent directory automatically (Phase B).
+**Agent skill directory:** Copy skills into the directory your agent discovers (Claude Code: `.claude/skills/`, others: equivalent). Skills then load as context without referencing `skills/` paths. After framework updates, run the `maintenance` skill — Phase B re-syncs the agent directory.
 
 Available skills:
 
@@ -256,10 +259,10 @@ Available skills:
 | `field-test` | Exercise tools/resources/prompts with real inputs, verify behavior, report issues |
 | `tool-defs-analysis` | Read-only audit of MCP definition language (voice, leaks, recovery hints, structure) |
 | `devcheck` | Lint, format, typecheck, audit |
-| `security-pass` | Audit handlers for MCP-specific security gaps before shipping |
+| `security-pass` | Audit server for MCP-flavored security gaps: output injection, scope blast radius, input sinks, tenant isolation |
 | `polish-docs-meta` | Finalize docs, README, metadata, and agent protocol for shipping |
 | `release-and-publish` | Publish to npm, MCP Registry, and GHCR after git wrapup |
-| `maintenance` | Sync skills and dependencies after updates |
+| `maintenance` | Investigate changelogs, adopt upstream changes, sync skills to agent dirs |
 | `report-issue-framework` | File a bug or feature request against `@cyanheads/mcp-ts-core` via `gh` CLI |
 | `report-issue-local` | File a bug or feature request against this server's own repo via `gh` CLI |
 | `api-auth` | Auth modes, scopes, JWT/OAuth |
@@ -286,13 +289,52 @@ When you complete a skill's checklist, check the boxes and add a completion time
 | `bun run build` | Compile TypeScript |
 | `bun run rebuild` | Clean + build |
 | `bun run clean` | Remove build artifacts |
-| `bun run devcheck` | Lint + format + typecheck + security |
+| `bun run devcheck` | Lint + format + typecheck + security + changelog sync |
+| `bun run audit:refresh` | Delete `bun.lock`, reinstall, and re-run `bun audit`. Use when `devcheck` flags a transitive advisory — Bun's `update` is sticky on transitive resolutions, so the advisory may be a stale-lockfile false positive. If it survives the refresh, it's real. |
 | `bun run tree` | Generate directory structure doc |
+| `bun run list-skills` | Print skill index from `skills/` frontmatter |
 | `bun run format` | Auto-fix formatting |
 | `bun run lint:mcp` | Validate MCP definitions |
+| `bun run lint:packaging` | Validate env var alignment between `manifest.json` and `server.json` |
+| `bun run bundle` | Build and pack as `.mcpb` for one-click Claude Desktop install |
+| `bun run changelog:build` | Regenerate `CHANGELOG.md` from `changelog/*.md` |
+| `bun run changelog:check` | Verify `CHANGELOG.md` is in sync (used by devcheck) |
 | `bun run test` | Run tests |
 | `bun run start:stdio` | Production mode (stdio) |
 | `bun run start:http` | Production mode (HTTP) |
+
+---
+
+## Bundling
+
+`bun run bundle` produces a `.mcpb` extension bundle for one-click install in Claude Desktop. MCPB is stdio-only — HTTP deployments are unaffected. Delete `manifest.json` and `.mcpbignore` to skip; `lint:packaging` skips cleanly when `manifest.json` is absent.
+
+**Adding an env var requires both files:** `server.json` (`environmentVariables[]`) and `manifest.json` (`mcp_config.env` + `user_config`). `lint:packaging` (run by `devcheck`) verifies env var names match.
+
+**README install badges** — drop these in to give users one-click install paths:
+
+| Client | Mechanism |
+|:-------|:----------|
+| Claude Desktop | Browser downloads `.mcpb` from latest GitHub Release; OS file handler routes to Claude Desktop. |
+| Cursor | `https://cursor.com/en/install-mcp` with base64 JSON config. |
+| VS Code | `vscode:mcp/install?...` wrapped in `https://vscode.dev/redirect?url=` (GitHub strips non-HTTP schemes). |
+| Claude Code / Codex | CLI only — no URL scheme. |
+
+```markdown
+[![Install in Claude Desktop](https://img.shields.io/badge/Install_in-Claude_Desktop-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](https://github.com/cyanheads/calculator-mcp-server/releases/latest/download/calculator-mcp-server.mcpb)
+[![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=calculator-mcp-server&config=<BASE64_CONFIG>)
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_Server-0098FF?style=for-the-badge&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode:mcp/install?<URLENCODED_JSON>)
+```
+
+Generate encoded configs:
+
+```bash
+# Cursor
+echo -n '{"command":"npx -y @cyanheads/calculator-mcp-server"}' | base64
+
+# VS Code
+node -p 'encodeURIComponent(JSON.stringify({name:"@cyanheads/calculator-mcp-server",command:"npx",args:["-y","@cyanheads/calculator-mcp-server"]}))'
+```
 
 ---
 
@@ -317,7 +359,8 @@ git push && git push --tags
 This server publishes to:
 
 1. **npm** — `bun publish --access public`
-2. **GHCR** — multi-arch Docker image:
+2. **GitHub Release** — `.mcpb` bundle attached via `gh release create --verify-tag --notes-from-tag dist/*.mcpb` (powers the Claude Desktop install badge)
+3. **GHCR** — multi-arch Docker image:
 
    ```bash
    docker buildx build --platform linux/amd64,linux/arm64 \
@@ -326,7 +369,7 @@ This server publishes to:
      --push .
    ```
 
-The `release-and-publish` skill drives both — don't run the commands manually unless the skill halts.
+The `release-and-publish` skill drives all three — don't run the commands manually unless the skill halts.
 
 ---
 
@@ -346,7 +389,7 @@ import { getServerConfig } from '@/config/server-config.js';
 
 ## Checklist
 
-- [ ] Zod schemas: all fields have `.describe()`, only JSON-Schema-serializable types (no `z.custom()`, `z.date()`, `z.transform()`, etc.)
+- [ ] Zod schemas: all fields have `.describe()`, only JSON-Schema-serializable types (no `z.custom()`, `z.date()`, `z.transform()`, `z.bigint()`, `z.symbol()`, `z.void()`, `z.map()`, `z.set()`, `z.function()`, `z.nan()`)
 - [ ] Optional nested objects: handler guards for empty inner values from form-based clients (`if (input.obj?.field && ...)`, not just `if (input.obj)`). When regex/length constraints matter, use `z.union([z.literal(''), z.string().regex(...).describe(...)])` — literal variants are exempt from `describe-on-fields`.
 - [ ] JSDoc `@fileoverview` + `@module` on every file
 - [ ] `ctx.log` for logging, `ctx.state` for storage

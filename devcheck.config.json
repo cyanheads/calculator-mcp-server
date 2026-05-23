@@ -7,9 +7,17 @@
       "tsc-alias",
       "@cyanheads/mcp-ts-core",
       "depcheck",
-      "tsx"
+      "tsx",
+      "bun",
+      "clipboardy",
+      "execa",
+      "js-yaml"
     ],
-    "ignorePatterns": []
+    "ignorePatterns": [
+      "scripts/devdocs.ts",
+      "scripts/fetch-openapi-spec.ts",
+      "scripts/update-coverage.ts"
+    ]
   },
   "outdated": {
     "allowlist": []
