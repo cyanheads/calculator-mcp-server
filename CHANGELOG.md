@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.24](changelog/0.1.x/0.1.24.md) — 2026-05-23
+
+Framework `@cyanheads/mcp-ts-core` `^0.9.4 → ^0.9.6`. Skills synced: maintenance (2.3 → 2.4), polish-docs-meta (2.0 → 2.2), release-and-publish (2.4 → 2.5). lint:packaging updated.
+
 ## [0.1.23](changelog/0.1.x/0.1.23.md) — 2026-05-22
 
 Framework `@cyanheads/mcp-ts-core` `^0.9.1 → ^0.9.4`. Explicit `zod` dep (peerDep change in 0.9.2). New scripts: `audit:refresh`, `list-skills`, `lint:packaging`, `bundle`, `changelog:build`, `changelog:check`. TypeScript exhaustiveness fix in `calculate.tool.ts`.
