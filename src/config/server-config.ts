@@ -6,28 +6,41 @@
 import { z } from '@cyanheads/mcp-ts-core';
 import { parseEnvConfig } from '@cyanheads/mcp-ts-core/config';
 
+/** Strip MCPB placeholder strings (e.g. `${user_config.X}`) to undefined so .default() applies. */
+const stripPlaceholder = (v: unknown) =>
+  typeof v === 'string' && v.startsWith('${') ? undefined : v;
+
 const ServerConfigSchema = z.object({
-  maxExpressionLength: z.coerce
-    .number()
-    .int()
-    .min(10)
-    .max(10_000)
-    .default(1000)
-    .describe('Maximum allowed expression string length (10–10,000)'),
-  evaluationTimeoutMs: z.coerce
-    .number()
-    .int()
-    .min(100)
-    .max(30_000)
-    .default(5000)
-    .describe('Maximum evaluation time in milliseconds (100–30,000)'),
-  maxResultLength: z.coerce
-    .number()
-    .int()
-    .min(1_000)
-    .max(1_000_000)
-    .default(100_000)
-    .describe('Maximum result string length in characters (1,000–1,000,000)'),
+  maxExpressionLength: z.preprocess(
+    stripPlaceholder,
+    z.coerce
+      .number()
+      .int()
+      .min(10)
+      .max(10_000)
+      .default(1000)
+      .describe('Maximum allowed expression string length (10–10,000)'),
+  ),
+  evaluationTimeoutMs: z.preprocess(
+    stripPlaceholder,
+    z.coerce
+      .number()
+      .int()
+      .min(100)
+      .max(30_000)
+      .default(5000)
+      .describe('Maximum evaluation time in milliseconds (100–30,000)'),
+  ),
+  maxResultLength: z.preprocess(
+    stripPlaceholder,
+    z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(1_000_000)
+      .default(100_000)
+      .describe('Maximum result string length in characters (1,000–1,000,000)'),
+  ),
 });
 
 export type ServerConfig = z.infer<typeof ServerConfigSchema>;

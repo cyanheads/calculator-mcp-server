@@ -1,0 +1,25 @@
+{
+  "name": "@cyanheads/calculator-mcp-server",
+  "version": "0.1.25",
+  "description": "Evaluate, simplify, and differentiate mathematical expressions via MCP.",
+  "author": {
+    "name": "cyanheads",
+    "email": "casey@caseyjhand.com",
+    "url": "https://caseyjhand.com"
+  },
+  "homepage": "https://github.com/cyanheads/calculator-mcp-server#readme",
+  "repository": "https://github.com/cyanheads/calculator-mcp-server",
+  "license": "Apache-2.0",
+  "keywords": ["mcp", "mcp-server", "model-context-protocol", "calculator", "math", "mathjs"],
+  "mcpServers": "./.codex-plugin/mcp.json",
+  "interface": {
+    "displayName": "@cyanheads/calculator-mcp-server",
+    "shortDescription": "Evaluate, simplify, and differentiate mathematical expressions via MCP.",
+    "longDescription": "A hardened math.js calculator MCP server that lets any LLM verify mathematical computations. Supports arithmetic, algebra, trigonometry, logarithms, statistics, matrices, complex numbers, combinatorics, and unit conversion. No auth required — all operations are read-only and stateless.",
+    "developerName": "cyanheads",
+    "category": "tools",
+    "capabilities": ["Read"],
+    "websiteURL": "https://github.com/cyanheads/calculator-mcp-server",
+    "defaultPrompt": []
+  }
+}

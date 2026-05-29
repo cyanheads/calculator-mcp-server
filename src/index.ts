@@ -19,6 +19,7 @@ await createApp({
     repoRoot: 'https://github.com/cyanheads/calculator-mcp-server',
     tagline:
       'A hardened math.js calculator MCP server — evaluate, simplify, and differentiate expressions.',
+    requireAuth: false,
   },
   setup() {
     initMathService(getServerConfig());

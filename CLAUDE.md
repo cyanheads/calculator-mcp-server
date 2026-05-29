@@ -1,8 +1,8 @@
 # Agent Protocol
 
 **Server:** calculator-mcp-server
-**Version:** 0.1.24
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.9.6`
+**Version:** 0.1.25
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.9.13`
 **Engines:** Bun ≥1.3.0, Node ≥24.0.0
 **MCP SDK:** `@modelcontextprotocol/sdk` 1.29.0
 **Zod:** 4.4.3
@@ -52,6 +52,7 @@ Tailor suggestions to what's actually missing or stale — don't recite the full
 - **Use `ctx.state`** for tenant-scoped storage. Never access persistence directly.
 - **Check `ctx.elicit` / `ctx.sample`** for presence before calling.
 - **Secrets in env vars only** — never hardcoded.
+- **Close the loop on issues.** When implementing work tracked by a GitHub issue, comment on the issue with what landed and close it. Do both — a comment without a close leaves stale issues open; a close without a comment leaves no record of what shipped. The comment is for future readers — state the concrete changes, not the conversation that produced them.
 
 ---
 
@@ -173,6 +174,8 @@ Handlers throw — the framework catches, classifies, and formats.
 On the wire, tool errors mirror the success-path `format-parity` invariant — both `content[]` (markdown, read by clients like Claude Desktop) and `structuredContent.error` (JSON `{ code, message, data? }`, read by clients like Claude Code) carry the same payload, with `data.recovery.hint` mirrored into the markdown text when present.
 
 ```ts
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+
 errors: [
   { reason: 'no_match', code: JsonRpcErrorCode.NotFound,
     when: 'No item matched the query',
@@ -262,7 +265,9 @@ Available skills:
 | `add-service` | Scaffold a new service integration |
 | `add-test` | Scaffold test file for a tool, resource, or service |
 | `field-test` | Exercise tools/resources/prompts with real inputs, verify behavior, report issues |
-| `tool-defs-analysis` | Read-only audit of MCP definition language (voice, leaks, recovery hints, structure) |
+| `code-simplifier` | Post-session code review and cleanup against `git diff` — modernize syntax, consolidate duplication, align with codebase |
+| `git-wrapup` | Land working-tree changes as a versioned commit + annotated tag — version bump, changelog, verify, tag. Local only. |
+| `tool-defs-analysis` | Read-only audit of MCP definition language across the surface — voice, leaks, defaults, recovery hints, output descriptions |
 | `devcheck` | Lint, format, typecheck, audit |
 | `security-pass` | Audit server for MCP-flavored security gaps: output injection, scope blast radius, input sinks, tenant isolation |
 | `polish-docs-meta` | Finalize docs, README, metadata, and agent protocol for shipping |
@@ -275,13 +280,12 @@ Available skills:
 | `api-config` | AppConfig, parseConfig, env vars |
 | `api-context` | Context interface, logger, state, progress |
 | `api-errors` | McpError, JsonRpcErrorCode, error patterns |
-| `api-linter` | MCP definition linter rules reference (every rule ID + fix) |
+| `api-linter` | Definition linter rule catalog — invoked by `bun run lint:mcp` and `devcheck` |
 | `api-services` | LLM, Speech, Graph services |
 | `api-telemetry` | OTel catalog: spans, metrics, completion logs, env config, cardinality rules |
 | `api-testing` | createMockContext, test patterns |
 | `api-utils` | Formatting, parsing, security, pagination, scheduling, telemetry helpers |
 | `api-workers` | Cloudflare Workers runtime |
-| `migrate-mcp-ts-template` | Migrate a template fork to use `@cyanheads/mcp-ts-core` as a package |
 
 When you complete a skill's checklist, check the boxes and add a completion timestamp at the end (e.g., `Completed: 2026-03-11`).
 
@@ -316,30 +320,7 @@ When you complete a skill's checklist, check the boxes and add a completion time
 
 **Adding an env var requires both files:** `server.json` (`environmentVariables[]`) and `manifest.json` (`mcp_config.env` + `user_config`). `lint:packaging` (run by `devcheck`) verifies env var names match.
 
-**README install badges** — drop these in to give users one-click install paths:
-
-| Client | Mechanism |
-|:-------|:----------|
-| Claude Desktop | Browser downloads `.mcpb` from latest GitHub Release; OS file handler routes to Claude Desktop. |
-| Cursor | `https://cursor.com/en/install-mcp` with base64 JSON config. |
-| VS Code | `vscode:mcp/install?...` wrapped in `https://vscode.dev/redirect?url=` (GitHub strips non-HTTP schemes). |
-| Claude Code / Codex | CLI only — no URL scheme. |
-
-```markdown
-[![Install in Claude Desktop](https://img.shields.io/badge/Install_in-Claude_Desktop-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](https://github.com/cyanheads/calculator-mcp-server/releases/latest/download/calculator-mcp-server.mcpb)
-[![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=calculator-mcp-server&config=<BASE64_CONFIG>)
-[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_Server-0098FF?style=for-the-badge&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode:mcp/install?<URLENCODED_JSON>)
-```
-
-Generate encoded configs:
-
-```bash
-# Cursor
-echo -n '{"command":"npx -y @cyanheads/calculator-mcp-server"}' | base64
-
-# VS Code
-node -p 'encodeURIComponent(JSON.stringify({name:"@cyanheads/calculator-mcp-server",command:"npx",args:["-y","@cyanheads/calculator-mcp-server"]}))'
-```
+**README install badges** (Claude Desktop `.mcpb`, Cursor, VS Code) and the `base64` / `encodeURIComponent` config-generation commands are ship-time concerns — run the `polish-docs-meta` skill, which carries the badge format, layout, and generation snippets in `skills/polish-docs-meta/references/readme.md`.
 
 ---
 
@@ -362,7 +343,11 @@ security: false                            # optional — true flags security fi
 
 `breaking: true` renders a `· ⚠️ Breaking` badge — use it when consumers must update code on upgrade (signature changes, removed APIs, config renames). `security: true` renders a `· 🛡️ Security` badge and pairs with a `## Security` body section. When both are set, badges render `· ⚠️ Breaking · 🛡️ Security`.
 
+`agent-notes` is an optional free-form field for maintenance agents processing the release downstream. Content here won't appear in the rendered CHANGELOG — it's consumed by agents running the `maintenance` skill. Use it for adoption instructions that don't fit the human-facing sections. Omit entirely when there's nothing to say.
+
 **Section order** (Keep a Changelog): Added, Changed, Deprecated, Removed, Fixed, Security. Include only sections with entries — don't ship empty headers.
+
+**Tag annotations** render as GitHub Release bodies via `--notes-from-tag`. They must be structured markdown — never a flat comma-separated string. Subject omits the version number (GitHub prepends it). See `changelog/template.md` for the full format reference.
 
 ---
 
@@ -425,4 +410,7 @@ import { getServerConfig } from '@/config/server-config.js';
 - [ ] `format()` renders all data the LLM needs — different clients forward different surfaces (Claude Code → `structuredContent`, Claude Desktop → `content[]`); both must carry the same data
 - [ ] Registered in `createApp()` arrays (directly or via barrel exports)
 - [ ] Tests use `createMockContext()` from `@cyanheads/mcp-ts-core/testing`
+- [ ] `.codex-plugin/plugin.json` populated — `name`, `version`, `description`, `repository`, `license` from `package.json`; `interface.displayName` = package name; `interface.shortDescription` from `package.json` description
+- [ ] `.codex-plugin/mcp.json` updated — server name key matches `package.json` name; env vars added for any required API keys
+- [ ] `.claude-plugin/plugin.json` populated — `name`, `version`, `description`, `repository`, `license` from `package.json`; inline `mcpServers` entry with server name key, env vars for any required API keys
 - [ ] `bun run devcheck` passes

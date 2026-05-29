@@ -1,11 +1,16 @@
 # calculator-mcp-server - Directory Structure
 
-Generated on: 2026-05-23 12:22:50
+Generated on: 2026-05-29 04:50:09
 
 ```text
 calculator-mcp-server/
 ├── .agents/
 ├── .claude/
+├── .claude-plugin/
+│   └── plugin.json
+├── .codex-plugin/
+│   ├── mcp.json
+│   └── plugin.json
 ├── .gemini/
 ├── .github/
 │   └── ISSUE_TEMPLATE/
@@ -79,15 +84,17 @@ calculator-mcp-server/
 │   │   └── SKILL.md
 │   ├── api-workers/
 │   │   └── SKILL.md
+│   ├── code-simplifier/
+│   │   └── SKILL.md
 │   ├── design-mcp-server/
 │   │   └── SKILL.md
 │   ├── devcheck/
 │   │   └── SKILL.md
 │   ├── field-test/
 │   │   └── SKILL.md
-│   ├── maintenance/
+│   ├── git-wrapup/
 │   │   └── SKILL.md
-│   ├── migrate-mcp-ts-template/
+│   ├── maintenance/
 │   │   └── SKILL.md
 │   ├── polish-docs-meta/
 │   │   ├── references/
