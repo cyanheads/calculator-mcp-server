@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.26](changelog/0.1.x/0.1.26.md) — 2026-05-30
+
+@cyanheads/mcp-ts-core ^0.9.13 → ^0.9.16: skills and scripts synced to framework version
+
 ## [0.1.25](changelog/0.1.x/0.1.25.md) — 2026-05-28
 
 @cyanheads/mcp-ts-core ^0.9.6 → ^0.9.13: HTTP 413 body cap, session-init gate, quieter 401/403/400/404 logs, GET /mcp keywords; MCPB placeholder stripping in server config

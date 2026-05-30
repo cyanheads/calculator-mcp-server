@@ -1,8 +1,8 @@
 # Agent Protocol
 
 **Server:** calculator-mcp-server
-**Version:** 0.1.25
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.9.13`
+**Version:** 0.1.26
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.9.16`
 **Engines:** Bun ≥1.3.0, Node ≥24.0.0
 **MCP SDK:** `@modelcontextprotocol/sdk` 1.29.0
 **Zod:** 4.4.3
@@ -160,6 +160,7 @@ Handlers receive a unified `ctx` object. Key properties:
 | `ctx.sample` | Request LLM completion from the client. **Check for presence first:** `if (ctx.sample) { ... }` |
 | `ctx.signal` | `AbortSignal` for cancellation. |
 | `ctx.progress` | Task progress (present when `task: true`) — `.setTotal(n)`, `.increment()`, `.update(message)`. |
+| `ctx.enrich` | Success-path enrichment — `.notice(text)`, `.total(n)`, `.echo(query)`, `.delta({ field, before, after })`. Merges into `structuredContent` and `content[]` trailer automatically. |
 | `ctx.requestId` | Unique request ID. |
 | `ctx.tenantId` | Tenant ID from JWT or `'default'` for stdio. |
 
@@ -302,7 +303,8 @@ When you complete a skill's checklist, check the boxes and add a completion time
 | `bun run audit:refresh` | Delete `bun.lock`, reinstall, and re-run `bun audit`. Use when `devcheck` flags a transitive advisory — Bun's `update` is sticky on transitive resolutions, so the advisory may be a stale-lockfile false positive. If it survives the refresh, it's real. |
 | `bun run tree` | Generate directory structure doc |
 | `bun run list-skills` | Print skill index from `skills/` frontmatter |
-| `bun run format` | Auto-fix formatting |
+| `bun run format` | Auto-fix formatting (safe fixes only) |
+| `bun run format:unsafe` | Also apply Biome's unsafe autofixes — review the diff; they can change behavior |
 | `bun run lint:mcp` | Validate MCP definitions |
 | `bun run lint:packaging` | Validate env var alignment between `manifest.json` and `server.json` |
 | `bun run bundle` | Build and pack as `.mcpb` for one-click Claude Desktop install |
