@@ -42,17 +42,38 @@ describe('calculate tool', () => {
   describe('evaluate (default)', () => {
     it('evaluates basic arithmetic', async () => {
       const result = await call({ expression: '2 + 3 * 4' });
-      expect(result).toEqual({ result: '14', resultType: 'number', expression: '2 + 3 * 4' });
+      expect(result).toEqual({
+        result: '14',
+        resultType: 'number',
+        expression: '2 + 3 * 4',
+        operation: 'evaluate',
+        scopeVars: null,
+        precisionUsed: null,
+      });
     });
 
     it('evaluates trigonometric functions', async () => {
       const result = await call({ expression: 'sin(pi / 2)' });
-      expect(result).toEqual({ result: '1', resultType: 'number', expression: 'sin(pi / 2)' });
+      expect(result).toEqual({
+        result: '1',
+        resultType: 'number',
+        expression: 'sin(pi / 2)',
+        operation: 'evaluate',
+        scopeVars: null,
+        precisionUsed: null,
+      });
     });
 
     it('evaluates with variable scope', async () => {
       const result = await call({ expression: 'a^2 + b^2', scope: { a: 3, b: 4 } });
-      expect(result).toEqual({ result: '25', resultType: 'number', expression: 'a^2 + b^2' });
+      expect(result).toEqual({
+        result: '25',
+        resultType: 'number',
+        expression: 'a^2 + b^2',
+        operation: 'evaluate',
+        scopeVars: ['a', 'b'],
+        precisionUsed: null,
+      });
     });
 
     it('evaluates unit conversion', async () => {
@@ -67,6 +88,9 @@ describe('calculate tool', () => {
         result: '-2',
         resultType: 'number',
         expression: 'det([1, 2; 3, 4])',
+        operation: 'evaluate',
+        scopeVars: null,
+        precisionUsed: null,
       });
     });
 
@@ -121,7 +145,14 @@ describe('calculate tool', () => {
 
     it('ignores blank variable values for non-derivative operations', async () => {
       const result = await call({ expression: '2 + 2', operation: 'evaluate', variable: '' });
-      expect(result).toEqual({ result: '4', resultType: 'number', expression: '2 + 2' });
+      expect(result).toEqual({
+        result: '4',
+        resultType: 'number',
+        expression: '2 + 2',
+        operation: 'evaluate',
+        scopeVars: null,
+        precisionUsed: null,
+      });
     });
 
     it('throws for 1/0 (Infinity)', () => {
@@ -144,6 +175,9 @@ describe('calculate tool', () => {
         result: '5 * x',
         resultType: 'string',
         expression: '2x + 3x',
+        operation: 'simplify',
+        scopeVars: null,
+        precisionUsed: null,
       });
     });
 
@@ -230,18 +264,73 @@ describe('calculate tool', () => {
   });
 
   describe('format', () => {
-    it('renders all output fields', () => {
+    it('renders all output fields, with null context shown as none/full', () => {
       const formatted = calculateTool.format?.({
         result: '42',
         resultType: 'number',
         expression: '6 * 7',
+        operation: 'evaluate',
+        scopeVars: null,
+        precisionUsed: null,
       });
       expect(formatted).toEqual([
         {
           type: 'text',
-          text: '**Expression:** `6 * 7`\n**Result:** 42\n**Type:** number',
+          text: '**Expression:** `6 * 7`\n**Operation:** evaluate\n**Result:** 42\n**Type:** number\n**Scope variables:** none\n**Precision:** full',
         },
       ]);
+    });
+
+    it('renders active scope variables and applied precision', () => {
+      const formatted = calculateTool.format?.({
+        result: '11',
+        resultType: 'number',
+        expression: 'x^2 + y',
+        operation: 'evaluate',
+        scopeVars: ['x', 'y'],
+        precisionUsed: 4,
+      });
+      expect(formatted).toEqual([
+        {
+          type: 'text',
+          text: '**Expression:** `x^2 + y`\n**Operation:** evaluate\n**Result:** 11\n**Type:** number\n**Scope variables:** x, y\n**Precision:** 4',
+        },
+      ]);
+    });
+  });
+
+  describe('output context fields', () => {
+    it('echoes operation, scope keys, and applied precision on evaluate', async () => {
+      const result = await call({ expression: 'x^2 + y', scope: { x: 3, y: 2 }, precision: 4 });
+      expect(result).toEqual({
+        result: '11',
+        resultType: 'number',
+        expression: 'x^2 + y',
+        operation: 'evaluate',
+        scopeVars: ['x', 'y'],
+        precisionUsed: 4,
+      });
+    });
+
+    it('reports null scopeVars and precisionUsed when neither is provided', async () => {
+      const result = await call({ expression: '2 + 2' });
+      expect(result.operation).toBe('evaluate');
+      expect(result.scopeVars).toBeNull();
+      expect(result.precisionUsed).toBeNull();
+    });
+
+    it('reports the operation with null context for derivative', async () => {
+      const result = await call({ expression: 'x^2', operation: 'derivative', variable: 'x' });
+      expect(result.operation).toBe('derivative');
+      expect(result.scopeVars).toBeNull();
+      expect(result.precisionUsed).toBeNull();
+    });
+
+    it('reports the operation with null context for simplify', async () => {
+      const result = await call({ expression: '2x + 3x', operation: 'simplify' });
+      expect(result.operation).toBe('simplify');
+      expect(result.scopeVars).toBeNull();
+      expect(result.precisionUsed).toBeNull();
     });
   });
 

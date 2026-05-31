@@ -1,6 +1,6 @@
 {
   "name": "@cyanheads/calculator-mcp-server",
-  "version": "0.1.26",
+  "version": "0.2.0",
   "description": "Evaluate, simplify, and differentiate mathematical expressions via MCP. STDIO or Streamable HTTP.",
   "mcpName": "io.github.cyanheads/calculator-mcp-server",
   "type": "module",

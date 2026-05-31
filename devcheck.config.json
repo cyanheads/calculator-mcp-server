@@ -20,6 +20,6 @@
     ]
   },
   "outdated": {
-    "allowlist": []
+    "allowlist": ["@cyanheads/mcp-ts-core"]
   }
 }

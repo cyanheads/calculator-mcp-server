@@ -374,6 +374,38 @@ describe('evaluate edge cases', () => {
     );
   });
 
+  it('rejects a matrix containing a non-finite (Infinity) element', () => {
+    expectMcpError(
+      () => calculateTool.handler(parse({ expression: '[1/0, 2]' }), mockCtx()),
+      JsonRpcErrorCode.ValidationError,
+      'undefined_result',
+    );
+  });
+
+  it('rejects a matrix containing a NaN element', () => {
+    expectMcpError(
+      () => calculateTool.handler(parse({ expression: '[0/0, 1]' }), mockCtx()),
+      JsonRpcErrorCode.ValidationError,
+      'undefined_result',
+    );
+  });
+
+  it('rejects a complex number with a non-finite component', () => {
+    expectMcpError(
+      () => calculateTool.handler(parse({ expression: '1/0 + 2i' }), mockCtx()),
+      JsonRpcErrorCode.ValidationError,
+      'undefined_result',
+    );
+  });
+
+  it('still accepts a fully finite matrix', async () => {
+    const result = await Promise.resolve(
+      calculateTool.handler(parse({ expression: '[1, 2; 3, 4]' }), mockCtx()),
+    );
+    expect(result.resultType).toBe('DenseMatrix');
+    expect(result.result).toContain('1');
+  });
+
   it('evaluates with multiple scope variables', async () => {
     const result = await Promise.resolve(
       calculateTool.handler(
@@ -494,6 +526,61 @@ describe('derivative result content', () => {
       ),
     );
     expect(result.result).toMatch(/2\s*\*\s*y/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Standard notation aliases (ln, arc*) — normalized before all operations
+// ---------------------------------------------------------------------------
+
+describe('standard notation aliases', () => {
+  it('evaluates ln() as natural log (-> log)', async () => {
+    const result = await Promise.resolve(
+      calculateTool.handler(parse({ expression: 'ln(e)', precision: 6 }), mockCtx()),
+    );
+    expect(result.result).toBe('1');
+  });
+
+  it('evaluates arcsin() as asin()', async () => {
+    const result = await Promise.resolve(
+      calculateTool.handler(parse({ expression: 'arcsin(1)' }), mockCtx()),
+    );
+    // asin(1) = pi/2 ≈ 1.5707963…
+    expect(result.result).toMatch(/^1\.570796/);
+  });
+
+  it('differentiates ln(x) to 1/x (derivative table resolves via name rewrite)', async () => {
+    const result = await Promise.resolve(
+      calculateTool.handler(
+        parse({ expression: 'ln(x)', operation: 'derivative', variable: 'x' }),
+        mockCtx(),
+      ),
+    );
+    expect(result.result).toMatch(/1\s*\/\s*x/);
+  });
+
+  it('differentiates arctan(x) to 1/(x^2 + 1)', async () => {
+    const result = await Promise.resolve(
+      calculateTool.handler(
+        parse({ expression: 'arctan(x)', operation: 'derivative', variable: 'x' }),
+        mockCtx(),
+      ),
+    );
+    expect(result.result).toContain('x ^ 2');
+  });
+
+  it('normalizes arc* names in simplify', async () => {
+    const result = await Promise.resolve(
+      calculateTool.handler(parse({ expression: 'arcsin(x)', operation: 'simplify' }), mockCtx()),
+    );
+    expect(result.result).toContain('asin');
+  });
+
+  it('does not rewrite a scope variable named "ln" (no call parens)', async () => {
+    const result = await Promise.resolve(
+      calculateTool.handler(parse({ expression: 'ln + 1', scope: { ln: 4 } }), mockCtx()),
+    );
+    expect(result.result).toBe('5');
   });
 });
 

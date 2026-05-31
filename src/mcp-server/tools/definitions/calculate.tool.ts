@@ -21,7 +21,7 @@ export const calculateTool = tool('calculate', {
       .string()
       .min(1)
       .describe(
-        `One mathematical expression per call — neither \`;\` nor newlines separate statements. Inside matrices, \`;\` separates rows (e.g. \`[1, 2; 3, 4]\`). Supports arithmetic (+, -, *, /, ^, %), functions (sin, cos, sqrt, log, abs, round, etc.), constants (pi, e, phi, i), matrices, units (5 kg to lbs), and variables (when scope is provided).`,
+        `One mathematical expression per call — neither \`;\` nor newlines separate statements. Inside matrices, \`;\` separates rows (e.g. \`[1, 2; 3, 4]\`). Supports arithmetic (+, -, *, /, ^, %), functions (sin, cos, sqrt, log, abs, round, etc.), constants (pi, e, phi, i), matrices, units (5 kg to lbs), and variables (when scope is provided). Standard notation \`ln\` and \`arc*\` (e.g. \`arcsin\`, \`arctan\`) is accepted alongside the math.js names \`log\` and \`asin\`/\`atan\`.`,
       ),
     operation: z
       .enum(['evaluate', 'simplify', 'derivative'])
@@ -69,6 +69,21 @@ export const calculateTool = tool('calculate', {
         'Type of result as reported by math.js: number, BigNumber, Complex, DenseMatrix, Unit, string, boolean. Symbolic operations return "string".',
       ),
     expression: z.string().describe('The original expression as received.'),
+    operation: z
+      .enum(['evaluate', 'simplify', 'derivative'])
+      .describe('The operation that was applied.'),
+    scopeVars: z
+      .array(z.string())
+      .nullable()
+      .describe(
+        'Keys from the scope that were active during evaluation, or null when no scope was provided. Values are omitted to keep output compact.',
+      ),
+    precisionUsed: z
+      .number()
+      .nullable()
+      .describe(
+        'Significant-digit precision that was applied, or null when full precision was used or the operation is symbolic.',
+      ),
   }),
   errors: [
     {
@@ -148,10 +163,22 @@ export const calculateTool = tool('calculate', {
     switch (operation) {
       case 'evaluate':
         ctx.log.info('Evaluated expression', { expression });
-        return { ...math.evaluateExpression(expression, ctx, scope, precision), expression };
+        return {
+          ...math.evaluateExpression(expression, ctx, scope, precision),
+          expression,
+          operation,
+          scopeVars: scope ? Object.keys(scope) : null,
+          precisionUsed: precision ?? null,
+        };
       case 'simplify':
         ctx.log.info('Simplified expression', { expression });
-        return { ...math.simplifyExpression(expression, ctx), expression };
+        return {
+          ...math.simplifyExpression(expression, ctx),
+          expression,
+          operation,
+          scopeVars: null,
+          precisionUsed: null,
+        };
       case 'derivative':
         if (!variable) {
           throw ctx.fail(
@@ -161,16 +188,27 @@ export const calculateTool = tool('calculate', {
           );
         }
         ctx.log.info('Differentiated expression', { expression, variable });
-        return { ...math.differentiateExpression(expression, variable, ctx), expression };
+        return {
+          ...math.differentiateExpression(expression, variable, ctx),
+          expression,
+          operation,
+          scopeVars: null,
+          precisionUsed: null,
+        };
       default:
         throw new Error(`Unhandled operation: ${operation as string}`);
     }
   },
 
-  format: (output) => [
-    {
-      type: 'text',
-      text: `**Expression:** \`${output.expression}\`\n**Result:** ${output.result}\n**Type:** ${output.resultType}`,
-    },
-  ],
+  format: (output) => {
+    const scopeVars =
+      output.scopeVars && output.scopeVars.length > 0 ? output.scopeVars.join(', ') : 'none';
+    const precision = output.precisionUsed ?? 'full';
+    return [
+      {
+        type: 'text',
+        text: `**Expression:** \`${output.expression}\`\n**Operation:** ${output.operation}\n**Result:** ${output.result}\n**Type:** ${output.resultType}\n**Scope variables:** ${scopeVars}\n**Precision:** ${precision}`,
+      },
+    ];
+  },
 });

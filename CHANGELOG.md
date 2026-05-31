@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.2.0](changelog/0.2.x/0.2.0.md) — 2026-05-30
+
+Output context fields (operation/scopeVars/precisionUsed), standard notation aliases (ln, arc*), and non-finite guard extended to matrices and complex numbers
+
 ## [0.1.26](changelog/0.1.x/0.1.26.md) — 2026-05-30
 
 @cyanheads/mcp-ts-core ^0.9.13 → ^0.9.16: skills and scripts synced to framework version

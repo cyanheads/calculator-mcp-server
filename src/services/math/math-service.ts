@@ -123,6 +123,52 @@ function hasExpressionSeparator(expr: string): boolean {
   return false;
 }
 
+/**
+ * Recursively test whether a math.js result holds any non-finite number
+ * (Infinity, -Infinity, NaN). The `undefined_result` guard must reach inside
+ * compound types: a `DenseMatrix`/`SparseMatrix` element or the real/imaginary
+ * part of a `Complex` can be non-finite while the outer value is an object — a
+ * scalar `typeof === 'number'` check would skip it and leak `Infinity` to clients.
+ */
+function containsNonFinite(value: unknown): boolean {
+  if (typeof value === 'number') return !Number.isFinite(value);
+  if (value === null || typeof value !== 'object') return false;
+  if (Array.isArray(value)) return value.some(containsNonFinite);
+  // Complex: re/im are plain numbers.
+  if ('re' in value && 'im' in value) {
+    return containsNonFinite(value.re) || containsNonFinite(value.im);
+  }
+  // DenseMatrix / SparseMatrix expose toArray() → nested JS arrays.
+  if (typeof (value as { toArray?: unknown }).toArray === 'function') {
+    return containsNonFinite((value as { toArray: () => unknown }).toArray());
+  }
+  return false;
+}
+
+/**
+ * Matches standard-notation function names math.js does not define — natural log
+ * `ln` and the inverse-trig `arc*` family — only at call sites (word boundary +
+ * `(` lookahead), so identifiers and scope variables are never rewritten.
+ */
+const NOTATION_ALIAS_PATTERN = /\b(ln|arc(?:sin|cos|tan|sec|csc|cot)h?)(?=\s*\()/g;
+
+/**
+ * Rewrite standard mathematical notation to math.js canonical names before
+ * parsing: `ln` → `log` (natural log) and `arc<fn>` → `a<fn>` for inverse trig
+ * (`arcsin` → `asin`, `arctanh` → `atanh`, …). All 12 `a*` targets are math.js
+ * builtins, so every operation resolves them.
+ *
+ * The rewrite is name-level (not a `math.import` alias) deliberately: symbolic
+ * `derivative` matches on builtin function names, and an imported alias is not in
+ * its differentiation table — so an alias would fix evaluate/simplify but leave
+ * `derivative('ln(x)')` throwing. A pre-parse rewrite covers all three operations.
+ */
+function normalizeNotation(expression: string): string {
+  return expression.replace(NOTATION_ALIAS_PATTERN, (name) =>
+    name === 'ln' ? 'log' : `a${name.slice(3)}`,
+  );
+}
+
 export class MathService {
   private readonly evaluate: (expr: string, scope?: Record<string, number>) => unknown;
   private readonly simplify: (expr: string, rules?: SimplifyRule[]) => { toString(): string };
@@ -176,18 +222,14 @@ export class MathService {
   ): MathResult {
     this.validateInput(expression, ctx);
     if (scope) this.validateScope(scope, ctx);
+    const normalized = normalizeNotation(expression);
     const raw = this.runWithTimeout(
-      () => (scope ? this.evaluate(expression, scope) : this.evaluate(expression)),
+      () => (scope ? this.evaluate(normalized, scope) : this.evaluate(normalized)),
       ctx,
     );
-    if (typeof raw === 'number' && !Number.isFinite(raw)) {
-      throw validationError(
-        `Expression evaluated to ${raw} — this typically means the operation is mathematically undefined (e.g., division by zero, log of zero). Check the expression.`,
-        { reason: 'undefined_result', ...ctx.recoveryFor('undefined_result') },
-      );
-    }
     const resultType = this.typeOf(raw);
     this.validateResultType(resultType, ctx);
+    this.validateFinite(raw, ctx);
     // Match JS Number.toString thresholds — math.js defaults to exp ≥ 5,
     // which would render 83810205 as "8.3810205e+7".
     const result = this.format(raw, {
@@ -202,8 +244,9 @@ export class MathService {
   /** Simplify an algebraic expression symbolically. */
   simplifyExpression(expression: string, ctx: Context): MathResult {
     this.validateInput(expression, ctx);
+    const normalized = normalizeNotation(expression);
     const simplified = this.runWithTimeout(
-      () => this.simplify(expression, this.simplifyRules),
+      () => this.simplify(normalized, this.simplifyRules),
       ctx,
     );
     const result = simplified.toString();
@@ -214,7 +257,8 @@ export class MathService {
   /** Compute the symbolic derivative of an expression with respect to a variable. */
   differentiateExpression(expression: string, variable: string, ctx: Context): MathResult {
     this.validateInput(expression, ctx);
-    const derived = this.runWithTimeout(() => this.derivative(expression, variable), ctx);
+    const normalized = normalizeNotation(expression);
+    const derived = this.runWithTimeout(() => this.derivative(normalized, variable), ctx);
     const result = derived.toString();
     this.validateResultSize(result, ctx);
     return { result, resultType: 'string' };
@@ -264,6 +308,16 @@ export class MathService {
       throw validationError(
         `Expression produced a ${resultType} — only numeric, string, matrix, complex, unit, and boolean results are allowed.`,
         { reason: 'disallowed_result_type', ...ctx.recoveryFor('disallowed_result_type') },
+      );
+    }
+  }
+
+  /** Reject results holding a non-finite value (Infinity, -Infinity, NaN), including inside matrices and complex numbers. */
+  private validateFinite(raw: unknown, ctx: Context): void {
+    if (containsNonFinite(raw)) {
+      throw validationError(
+        'Expression evaluated to a non-finite result (Infinity, -Infinity, or NaN) — this typically means the operation is mathematically undefined (e.g., division by zero, log of zero). Check the expression.',
+        { reason: 'undefined_result', ...ctx.recoveryFor('undefined_result') },
       );
     }
   }
@@ -347,11 +401,13 @@ const HELP_CONTENT = `# Calculator Help
 
 ## Functions
 
+> **Standard notation accepted:** \`ln\` works as natural log (canonical \`log\`), and the \`arc*\` inverse-trig names (\`arcsin\`, \`arccos\`, \`arctan\`, \`arcsinh\`, …) work as their \`a*\` equivalents (\`asin\`, \`acos\`, \`atan\`, …). Both forms are valid across evaluate, simplify, and derivative.
+
 ### Arithmetic
-abs, ceil, floor, round, sign, sqrt, cbrt, exp, expm1, log, log2, log10, log1p, pow, mod, gcd, lcm, nthRoot, hypot, fix, cube, square, unaryMinus, unaryPlus
+abs, ceil, floor, round, sign, sqrt, cbrt, exp, expm1, log (also: ln), log2, log10, log1p, pow, mod, gcd, lcm, nthRoot, hypot, fix, cube, square, unaryMinus, unaryPlus
 
 ### Trigonometry
-sin, cos, tan, asin, acos, atan, atan2, sinh, cosh, tanh, asinh, acosh, atanh, sec, csc, cot, asec, acsc, acot, sech, csch, coth
+sin, cos, tan, asin (arcsin), acos (arccos), atan (arctan), atan2, sinh, cosh, tanh, asinh (arcsinh), acosh (arccosh), atanh (arctanh), sec, csc, cot, asec (arcsec), acsc (arccsc), acot (arccot), sech (arcsech), csch (arccsch), coth (arccoth)
 
 ### Statistics
 mean (aliases: average, avg), median, mode, std, variance, min, max, sum, prod, quantileSeq, mad, count
