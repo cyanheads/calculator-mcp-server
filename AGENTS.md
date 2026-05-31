@@ -1,7 +1,7 @@
 # Agent Protocol
 
 **Server:** calculator-mcp-server
-**Version:** 0.2.0
+**Version:** 0.3.0
 **Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.9.16`
 **Engines:** Bun ≥1.3.0, Node ≥24.0.0
 **MCP SDK:** `@modelcontextprotocol/sdk` 1.29.0
@@ -20,7 +20,7 @@ A publicly-hosted calculator MCP server that lets any LLM verify mathematical co
 
 ### Security Model
 
-MathService wraps a **hardened math.js instance** — dangerous functions (`import`, `createUnit`, `evaluate`, `parse`, `compile`, `chain`, `config`, `resolve`, `reviver`, `parser`) are disabled in the expression scope. `simplify` and `derivative` are also disabled in expressions but called programmatically by the tool handler. Evaluation runs inside `vm.runInNewContext()` with a timeout. Input length is capped. Expression separators (semicolons and newlines) are rejected — single expression per call only. Variable scope accepts `z.record(z.number())` only with prototype-polluting keys blocked. Result types are validated (functions, parsers, and result sets rejected). Result size is capped via `CALC_MAX_RESULT_LENGTH`. The math.js `version` constant is redacted to prevent fingerprinting.
+MathService wraps a **hardened math.js instance** — dangerous functions (`import`, `createUnit`, `evaluate`, `parse`, `compile`, `chain`, `config`, `resolve`, `reviver`, `parser`) are disabled in the expression scope. `simplify` and `derivative` are also disabled in expressions but called programmatically by the tool handler. Evaluation runs inside `vm.runInNewContext()` with a timeout. Input length is capped. Expression separators (semicolons and newlines) are rejected — single expression per call only (the separator scan is string-literal-aware so `;` inside `"..."` is not treated as a statement break). Variable scope accepts `z.record(z.number())` only with prototype-polluting keys blocked. Result types are validated (functions, parsers, and result sets rejected). `.toString()` / `.toLocaleString()` access on any value is rejected at parse time via an AST check — these method calls on function-valued identifiers would otherwise bypass the result-type guard by returning source as a plain string. Result size is capped via `CALC_MAX_RESULT_LENGTH`. The math.js `version` constant is redacted to prevent fingerprinting.
 
 ---
 

@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.3.0](changelog/0.3.x/0.3.0.md) — 2026-05-31 · 🛡️ Security
+
+Omit null context fields from output, block function-source leak via toString/toLocaleString, string-literal-aware separator scan
+
 ## [0.2.0](changelog/0.2.x/0.2.0.md) — 2026-05-30
 
 Output context fields (operation/scopeVars/precisionUsed), standard notation aliases (ln, arc*), and non-finite guard extended to matrices and complex numbers

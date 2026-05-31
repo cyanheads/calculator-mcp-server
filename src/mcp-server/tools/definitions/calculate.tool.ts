@@ -74,15 +74,15 @@ export const calculateTool = tool('calculate', {
       .describe('The operation that was applied.'),
     scopeVars: z
       .array(z.string())
-      .nullable()
+      .optional()
       .describe(
-        'Keys from the scope that were active during evaluation, or null when no scope was provided. Values are omitted to keep output compact.',
+        'Keys from the scope that were active during evaluation. Omitted when no scope was provided. Values are omitted to keep output compact.',
       ),
     precisionUsed: z
       .number()
-      .nullable()
+      .optional()
       .describe(
-        'Significant-digit precision that was applied, or null when full precision was used or the operation is symbolic.',
+        'Significant-digit precision applied to the result. Omitted when full precision was used or the operation is symbolic.',
       ),
   }),
   errors: [
@@ -113,9 +113,9 @@ export const calculateTool = tool('calculate', {
     {
       reason: 'disallowed_result_type',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'Result type is function, parser, or multi-expression ResultSet — security guard.',
+      when: 'Result is a function, parser, or multi-expression ResultSet, or the expression converts a function to a string (e.g. `cos.toString()`) — security guard.',
       recovery:
-        'Rewrite the expression to produce a value (number, matrix, unit) instead of a function or parser.',
+        'Rewrite the expression to produce a value (number, matrix, unit) instead of a function or its source.',
     },
     {
       reason: 'result_too_large',
@@ -167,17 +167,18 @@ export const calculateTool = tool('calculate', {
           ...math.evaluateExpression(expression, ctx, scope, precision),
           expression,
           operation,
-          scopeVars: scope ? Object.keys(scope) : null,
-          precisionUsed: precision ?? null,
+          // Omit context fields that carry no signal: scopeVars only when a scope
+          // was supplied, precisionUsed only when a precision was applied (#14).
+          ...(scope ? { scopeVars: Object.keys(scope) } : {}),
+          ...(precision !== undefined ? { precisionUsed: precision } : {}),
         };
       case 'simplify':
         ctx.log.info('Simplified expression', { expression });
+        // Symbolic operations never carry scope/precision context — omit both.
         return {
           ...math.simplifyExpression(expression, ctx),
           expression,
           operation,
-          scopeVars: null,
-          precisionUsed: null,
         };
       case 'derivative':
         if (!variable) {
@@ -188,12 +189,11 @@ export const calculateTool = tool('calculate', {
           );
         }
         ctx.log.info('Differentiated expression', { expression, variable });
+        // Symbolic operations never carry scope/precision context — omit both.
         return {
           ...math.differentiateExpression(expression, variable, ctx),
           expression,
           operation,
-          scopeVars: null,
-          precisionUsed: null,
         };
       default:
         throw new Error(`Unhandled operation: ${operation as string}`);

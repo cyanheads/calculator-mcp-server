@@ -197,6 +197,99 @@ describe('injection via expression strings', () => {
     expect(result.result).toContain('3');
     expect(result.result).toContain('2');
   });
+
+  // #16: the separator scan is string-literal-aware — a `;` inside a double-quoted
+  // string is data, not a statement break, and must not be falsely rejected.
+  it('allows a semicolon inside a double-quoted string literal', async () => {
+    const result = await Promise.resolve(
+      calculateTool.handler(parse({ expression: '"hello;world"' }), mockCtx()),
+    );
+    expect(result.resultType).toBe('string');
+    expect(result.result).toContain('hello;world');
+  });
+
+  it('allows a semicolon inside a string argument to a function', async () => {
+    const result = await Promise.resolve(
+      calculateTool.handler(parse({ expression: 'concat("a;b", "c")' }), mockCtx()),
+    );
+    expect(result.result).toContain('a;bc');
+  });
+
+  it('allows a newline inside a double-quoted string literal', async () => {
+    const result = await Promise.resolve(
+      calculateTool.handler(parse({ expression: '"line1\nline2"' }), mockCtx()),
+    );
+    expect(result.resultType).toBe('string');
+    expect(result.result).toContain('line1');
+    expect(result.result).toContain('line2');
+  });
+
+  it('still rejects a top-level semicolon that follows a string literal', () => {
+    // The `[` inside the string must not shift bracket depth, so the trailing
+    // top-level `;` is still caught — the benign converse noted in #16.
+    expectMcpError(
+      () => calculateTool.handler(parse({ expression: '"[" ; 1 + 1' }), mockCtx()),
+      JsonRpcErrorCode.ValidationError,
+      'multiple_expressions',
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Security: function source non-leakage (toString / toLocaleString) — #15
+// ---------------------------------------------------------------------------
+
+describe('function-to-string source non-leakage', () => {
+  // `.toString()` / `.toLocaleString()` on a function-valued identifier used to
+  // return the function's source as a plain string, slipping past the
+  // result-type guard (which only ever sees the post-stringify string). Both
+  // method forms, on math.js builtins and on the disabled-function shims, must
+  // now reject — consistent with the already-blocked `.constructor` / `.name`.
+  const leakAttempts = [
+    'cos.toString()',
+    'cos.toLocaleString()',
+    'cos["toString"]()',
+    'import.toString()',
+    'evaluate.toString()',
+    'simplify.toString()',
+  ];
+
+  for (const expr of leakAttempts) {
+    it(`rejects ${expr} as disallowed_result_type`, () => {
+      expectMcpError(
+        () => calculateTool.handler(parse({ expression: expr }), mockCtx()),
+        JsonRpcErrorCode.ValidationError,
+        'disallowed_result_type',
+      );
+    });
+  }
+
+  it('does not leak function source text in the rejection', () => {
+    let message = '';
+    try {
+      calculateTool.handler(parse({ expression: 'cos.toString()' }), mockCtx());
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+    }
+    // The leaked math.js source signature must not appear anywhere in the error.
+    expect(message).not.toContain('apply');
+    expect(message).not.toContain('arguments');
+    expect(message).not.toContain('theTypedFn');
+  });
+
+  it('restores Function.prototype.toString after the guarded eval', async () => {
+    // The patch is installed and restored per-eval; a normal call immediately
+    // after a leak attempt must evaluate exactly as before.
+    expectMcpError(
+      () => calculateTool.handler(parse({ expression: 'cos.toString()' }), mockCtx()),
+      JsonRpcErrorCode.ValidationError,
+      'disallowed_result_type',
+    );
+    const result = await Promise.resolve(
+      calculateTool.handler(parse({ expression: 'cos(0)' }), mockCtx()),
+    );
+    expect(result.result).toBe('1');
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -47,8 +47,6 @@ describe('calculate tool', () => {
         resultType: 'number',
         expression: '2 + 3 * 4',
         operation: 'evaluate',
-        scopeVars: null,
-        precisionUsed: null,
       });
     });
 
@@ -59,8 +57,6 @@ describe('calculate tool', () => {
         resultType: 'number',
         expression: 'sin(pi / 2)',
         operation: 'evaluate',
-        scopeVars: null,
-        precisionUsed: null,
       });
     });
 
@@ -72,8 +68,9 @@ describe('calculate tool', () => {
         expression: 'a^2 + b^2',
         operation: 'evaluate',
         scopeVars: ['a', 'b'],
-        precisionUsed: null,
       });
+      // #14: scope supplied but full precision → precisionUsed omitted.
+      expect(result).not.toHaveProperty('precisionUsed');
     });
 
     it('evaluates unit conversion', async () => {
@@ -89,8 +86,6 @@ describe('calculate tool', () => {
         resultType: 'number',
         expression: 'det([1, 2; 3, 4])',
         operation: 'evaluate',
-        scopeVars: null,
-        precisionUsed: null,
       });
     });
 
@@ -150,8 +145,6 @@ describe('calculate tool', () => {
         resultType: 'number',
         expression: '2 + 2',
         operation: 'evaluate',
-        scopeVars: null,
-        precisionUsed: null,
       });
     });
 
@@ -176,8 +169,6 @@ describe('calculate tool', () => {
         resultType: 'string',
         expression: '2x + 3x',
         operation: 'simplify',
-        scopeVars: null,
-        precisionUsed: null,
       });
     });
 
@@ -264,14 +255,12 @@ describe('calculate tool', () => {
   });
 
   describe('format', () => {
-    it('renders all output fields, with null context shown as none/full', () => {
+    it('renders omitted context fields as none/full', () => {
       const formatted = calculateTool.format?.({
         result: '42',
         resultType: 'number',
         expression: '6 * 7',
         operation: 'evaluate',
-        scopeVars: null,
-        precisionUsed: null,
       });
       expect(formatted).toEqual([
         {
@@ -312,25 +301,26 @@ describe('calculate tool', () => {
       });
     });
 
-    it('reports null scopeVars and precisionUsed when neither is provided', async () => {
+    it('omits scopeVars and precisionUsed when neither is provided', async () => {
       const result = await call({ expression: '2 + 2' });
       expect(result.operation).toBe('evaluate');
-      expect(result.scopeVars).toBeNull();
-      expect(result.precisionUsed).toBeNull();
+      // #14: the keys are absent from the payload, not present-as-null.
+      expect(result).not.toHaveProperty('scopeVars');
+      expect(result).not.toHaveProperty('precisionUsed');
     });
 
-    it('reports the operation with null context for derivative', async () => {
+    it('omits both context fields for derivative', async () => {
       const result = await call({ expression: 'x^2', operation: 'derivative', variable: 'x' });
       expect(result.operation).toBe('derivative');
-      expect(result.scopeVars).toBeNull();
-      expect(result.precisionUsed).toBeNull();
+      expect(result).not.toHaveProperty('scopeVars');
+      expect(result).not.toHaveProperty('precisionUsed');
     });
 
-    it('reports the operation with null context for simplify', async () => {
+    it('omits both context fields for simplify', async () => {
       const result = await call({ expression: '2x + 3x', operation: 'simplify' });
       expect(result.operation).toBe('simplify');
-      expect(result.scopeVars).toBeNull();
-      expect(result.precisionUsed).toBeNull();
+      expect(result).not.toHaveProperty('scopeVars');
+      expect(result).not.toHaveProperty('precisionUsed');
     });
   });
 

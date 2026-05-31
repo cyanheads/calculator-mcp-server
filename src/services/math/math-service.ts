@@ -8,7 +8,7 @@
 import vm from 'node:vm';
 import type { Context } from '@cyanheads/mcp-ts-core';
 import { timeout, validationError } from '@cyanheads/mcp-ts-core/errors';
-import { all, create, type SimplifyRule, type UnitDefinition } from 'mathjs';
+import { all, create, type MathNode, type SimplifyRule, type UnitDefinition } from 'mathjs';
 import type { ServerConfig } from '@/config/server-config.js';
 import type { MathResult } from './types.js';
 
@@ -88,6 +88,15 @@ const REDACTED_CONSTANTS: Record<string, string> = {
 const BLOCKED_RESULT_TYPES = new Set(['function', 'Function', 'ResultSet', 'Parser']);
 
 /**
+ * Method names that coerce a value to a string. Blocked at parse time on any
+ * accessor: `.toString()` / `.toLocaleString()` on a function-valued identifier
+ * (e.g. `cos.toString()`) otherwise returns internal source as a plain string,
+ * slipping past {@link BLOCKED_RESULT_TYPES} (which only sees the value after
+ * stringification). See {@link MathService.validateNoFunctionStringification}.
+ */
+const STRINGIFYING_METHODS = new Set(['toString', 'toLocaleString']);
+
+/**
  * Scope key names that could pollute the object prototype chain or shadow
  * critical Object.prototype methods. Validated before passing to math.js.
  */
@@ -108,14 +117,32 @@ const BLOCKED_SCOPE_KEYS = new Set([
 ]);
 
 /**
- * Check for expression separators outside square brackets.
- * Semicolons inside `[...]` are valid matrix row separators.
- * Newlines (`\n`, `\r`) are also expression separators in math.js.
+ * Check for expression separators (`;` or newline) that split the input into
+ * multiple statements. Three contexts are NOT separators and are skipped:
+ *  - `;` inside `[...]` — a matrix row separator (`[1, 2; 3, 4]`).
+ *  - `;` or a newline inside a double-quoted string literal — part of the data,
+ *    not a statement break (`"a;b"`, `concat("a;b", "c")`).
+ *  - `[` / `]` inside a string literal — they must not shift the bracket depth,
+ *    or a string such as `"]"` would let a later top-level `;` slip past.
+ *
+ * Single quotes are NOT string delimiters in math.js — `'` is the transpose
+ * operator (`A'`) — so only `"` opens a string span, and a backslash escapes the
+ * next character within it (`"\""` stays open). The scan is intentionally
+ * lexical rather than a full parse: it only has to recognize quoted spans, and a
+ * genuine multi-statement input (`1+2; 3+4`) is still caught at depth 0.
  */
 function hasExpressionSeparator(expr: string): boolean {
   let depth = 0;
-  for (const ch of expr) {
-    if (ch === '[') depth++;
+  let inString = false;
+  for (let i = 0; i < expr.length; i++) {
+    const ch = expr[i];
+    if (inString) {
+      if (ch === '\\') i++;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '[') depth++;
     else if (ch === ']') depth--;
     else if (ch === '\n' || ch === '\r') return true;
     else if (ch === ';' && depth === 0) return true;
@@ -171,6 +198,7 @@ function normalizeNotation(expression: string): string {
 
 export class MathService {
   private readonly evaluate: (expr: string, scope?: Record<string, number>) => unknown;
+  private readonly parse: (expr: string) => MathNode;
   private readonly simplify: (expr: string, rules?: SimplifyRule[]) => { toString(): string };
   private readonly derivative: (expr: string, variable: string) => { toString(): string };
   private readonly simplifyRules: SimplifyRule[];
@@ -188,6 +216,7 @@ export class MathService {
 
     // Save references before overriding — these bypass the expression scope restrictions
     this.evaluate = math.evaluate.bind(math);
+    this.parse = math.parse.bind(math);
     this.simplify = math.simplify.bind(math);
     this.derivative = math.derivative.bind(math);
     this.simplifyRules = [...math.simplify.rules, ...TRIG_SIMPLIFY_RULES];
@@ -223,6 +252,7 @@ export class MathService {
     this.validateInput(expression, ctx);
     if (scope) this.validateScope(scope, ctx);
     const normalized = normalizeNotation(expression);
+    this.validateNoFunctionStringification(normalized, ctx);
     const raw = this.runWithTimeout(
       () => (scope ? this.evaluate(normalized, scope) : this.evaluate(normalized)),
       ctx,
@@ -328,6 +358,45 @@ export class MathService {
       throw validationError(
         `Result exceeds maximum size (${this.config.maxResultLength} characters). Reduce matrix dimensions or simplify the expression.`,
         { reason: 'result_too_large', ...ctx.recoveryFor('result_too_large') },
+      );
+    }
+  }
+
+  /**
+   * Reject expressions that access `.toString` / `.toLocaleString` on any value.
+   * math.js permits these methods on function-valued identifiers (`cos.toString()`,
+   * `import.toString()`), returning the function's source as a plain string — which
+   * slips past {@link validateResultType}, whose function defense only inspects the
+   * value AFTER stringification. The check is parse-time and AST-based rather than a
+   * runtime `Function.prototype` patch: math.js itself calls `toString` on functions
+   * internally while evaluating units, statistics, and complex results, so patching
+   * the prototype would reject legitimate expressions. No real calculator expression
+   * needs `.toString()`/`.toLocaleString()`, so blocking the accessor outright (dot
+   * or bracket form, on any operand) is both sufficient and side-effect-free. String
+   * literals that merely contain the text "toString" parse as ConstantNodes, not
+   * accessors, so they are unaffected.
+   */
+  private validateNoFunctionStringification(expr: string, ctx: Context): void {
+    let ast: MathNode;
+    try {
+      ast = this.parse(expr);
+    } catch {
+      // Let the evaluate path surface parse errors with full mathjs context.
+      return;
+    }
+    const accessesStringifier = ast.filter((node) => {
+      if (node.type !== 'IndexNode') return false;
+      const { dimensions } = node as unknown as {
+        dimensions: Array<{ type: string; value?: unknown }>;
+      };
+      return dimensions.some(
+        (dim) => dim.type === 'ConstantNode' && STRINGIFYING_METHODS.has(String(dim.value)),
+      );
+    });
+    if (accessesStringifier.length > 0) {
+      throw validationError(
+        'Converting a function to a string is not allowed — it would expose internal source. Only numeric, string, matrix, complex, unit, and boolean results are allowed.',
+        { reason: 'disallowed_result_type', ...ctx.recoveryFor('disallowed_result_type') },
       );
     }
   }
