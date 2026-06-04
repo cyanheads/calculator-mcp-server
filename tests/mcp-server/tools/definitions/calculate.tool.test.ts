@@ -169,6 +169,7 @@ describe('calculate tool', () => {
         resultType: 'string',
         expression: '2x + 3x',
         operation: 'simplify',
+        unchanged: false,
       });
     });
 
@@ -195,6 +196,41 @@ describe('calculate tool', () => {
     it('simplifies tan^2 + 1 to sec^2', async () => {
       const result = await call({ expression: 'tan(x)^2 + 1', operation: 'simplify' });
       expect(result.result).toBe('sec(x) ^ 2');
+    });
+
+    // #1: unchanged flag — simplifier no-op detection
+    it('sets unchanged: false when simplification makes progress', async () => {
+      const result = await call({ expression: '2x + 3x', operation: 'simplify' });
+      expect(result.unchanged).toBe(false);
+    });
+
+    it('sets unchanged: true when the simplifier cannot reduce the expression', async () => {
+      // Rational expression requiring polynomial factoring — beyond math.js's built-in simplifier.
+      const result = await call({ expression: '(x^2 - 1) / (x - 1)', operation: 'simplify' });
+      expect(result.unchanged).toBe(true);
+      // Result is returned unchanged — the expression is not empty or errored.
+      expect(result.result).toBeTruthy();
+    });
+
+    it('sets unchanged: false for expressions the simplifier collapses to a constant', async () => {
+      const result = await call({ expression: 'sin(x)^2 + cos(x)^2', operation: 'simplify' });
+      expect(result.result).toBe('1');
+      expect(result.unchanged).toBe(false);
+    });
+
+    it('always includes unchanged in simplify output', async () => {
+      const result = await call({ expression: 'x + 0', operation: 'simplify' });
+      expect(result).toHaveProperty('unchanged');
+    });
+
+    it('omits unchanged for evaluate', async () => {
+      const result = await call({ expression: '2 + 2' });
+      expect(result).not.toHaveProperty('unchanged');
+    });
+
+    it('omits unchanged for derivative', async () => {
+      const result = await call({ expression: 'x^2', operation: 'derivative', variable: 'x' });
+      expect(result).not.toHaveProperty('unchanged');
     });
   });
 
@@ -423,6 +459,109 @@ describe('calculate tool', () => {
         JsonRpcErrorCode.Timeout,
         'evaluation_timeout',
       );
+    });
+  });
+
+  // #7: numericType parameter — BigNumber and Fraction escalation
+  describe('numericType parameter', () => {
+    it('defaults to "number" (no numericType specified)', async () => {
+      const result = await call({ expression: '2 + 2' });
+      expect(result.result).toBe('4');
+      expect(result.resultType).toBe('number');
+    });
+
+    it('evaluates with explicit numericType: "number"', async () => {
+      const result = await call({ expression: '1 / 3', numericType: 'number', precision: 4 });
+      expect(result.result).toBe('0.3333');
+      expect(result.resultType).toBe('number');
+    });
+
+    it('evaluates with numericType: "BigNumber" and returns BigNumber type', async () => {
+      const result = await call({ expression: '2 + 2', numericType: 'BigNumber' });
+      expect(result.result).toBe('4');
+      expect(result.resultType).toBe('BigNumber');
+    });
+
+    it('resolves factorial ratio that overflows 64-bit float using BigNumber', async () => {
+      // 10000! / 9999! overflows as IEEE 754 (Infinity / Infinity = NaN → undefined_result).
+      // BigNumber arithmetic computes it incrementally without overflow.
+      const result = await call({ expression: '10000! / 9999!', numericType: 'BigNumber' });
+      // Result is mathematically 10000 — BigNumber gives a close high-precision approximation.
+      expect(result.resultType).toBe('BigNumber');
+      // The result should be close to 10000 (BigNumber precision is ~64 digits).
+      expect(parseFloat(result.result)).toBeCloseTo(10000, 0);
+    });
+
+    it('default "number" mode still rejects factorial ratio overflow as undefined_result', () => {
+      // Regression: escalating to BigNumber must not change the default path behavior.
+      expectMcpError(
+        () => calculateTool.handler(parse({ expression: '10000! / 9999!' }), mockCtx()),
+        JsonRpcErrorCode.ValidationError,
+        'undefined_result',
+      );
+    });
+
+    it('evaluates with numericType: "Fraction" for exact rational results', async () => {
+      // 0.1 + 0.2 in IEEE 754 produces 0.30000000000000004; Fraction eliminates rounding.
+      // math.format() for Fraction values renders in fraction notation (e.g. "3/10"),
+      // not decimal notation — the important property is that the result is exact.
+      const result = await call({ expression: '0.1 + 0.2', numericType: 'Fraction' });
+      expect(result.resultType).toBe('Fraction');
+      // 0.1 + 0.2 as exact Fraction is 3/10 — no floating-point error.
+      expect(result.result).toMatch(/3\/10|0\.3/);
+    });
+
+    it('rejects invalid numericType via Zod schema', () => {
+      expect(() => parse({ expression: '2 + 2', numericType: 'double' })).toThrow();
+    });
+
+    it('security guards remain active on BigNumber instance', () => {
+      // Disabled functions must throw even on the BigNumber-configured instance.
+      expectMcpError(
+        () =>
+          calculateTool.handler(
+            parse({ expression: 'evaluate("2+3")', numericType: 'BigNumber' }),
+            mockCtx(),
+          ),
+        JsonRpcErrorCode.ValidationError,
+        'parse_failed',
+      );
+    });
+  });
+
+  describe('format (updated for simplify)', () => {
+    it('renders "reduced" status when unchanged is false', () => {
+      const formatted = calculateTool.format?.({
+        result: '5 * x',
+        resultType: 'string',
+        expression: '2x + 3x',
+        operation: 'simplify',
+        unchanged: false,
+      });
+      expect(formatted?.[0].text).toContain('unchanged: false');
+    });
+
+    it('renders "unchanged" status when unchanged is true', () => {
+      const formatted = calculateTool.format?.({
+        result: '(x ^ 2 - 1) / (x - 1)',
+        resultType: 'string',
+        expression: '(x^2 - 1) / (x - 1)',
+        operation: 'simplify',
+        unchanged: true,
+      });
+      expect(formatted?.[0].text).toContain('could not be reduced further');
+    });
+
+    it('omits scope/precision lines for simplify', () => {
+      const formatted = calculateTool.format?.({
+        result: '5 * x',
+        resultType: 'string',
+        expression: '2x + 3x',
+        operation: 'simplify',
+        unchanged: false,
+      });
+      expect(formatted?.[0].text).not.toContain('Scope variables');
+      expect(formatted?.[0].text).not.toContain('Precision');
     });
   });
 });

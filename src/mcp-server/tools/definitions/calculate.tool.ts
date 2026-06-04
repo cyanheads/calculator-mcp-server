@@ -27,7 +27,7 @@ export const calculateTool = tool('calculate', {
       .enum(['evaluate', 'simplify', 'derivative'])
       .default('evaluate')
       .describe(
-        'Operation to perform. "evaluate" computes a numeric result (default). "simplify" reduces an algebraic expression symbolically (e.g., "2x + 3x" -> "5 * x"). Supports algebraic and trigonometric identities. "derivative" computes the symbolic derivative (requires the variable parameter).',
+        'Operation to perform. "evaluate" computes a numeric result (default). "simplify" reduces an algebraic expression symbolically (e.g., "2x + 3x" -> "5 * x"). Supports algebraic and trigonometric identities. When the simplifier cannot reduce the expression further (e.g. rational expressions requiring polynomial factoring), the result is returned unchanged and unchanged: true is set in the output. "derivative" computes the symbolic derivative (requires the variable parameter).',
       ),
     variable: z
       .union([
@@ -60,6 +60,12 @@ export const calculateTool = tool('calculate', {
       .describe(
         'Significant digits (1–16) for numeric results. Omit for full precision. Empty string is treated as omitted. Ignored for symbolic operations (simplify, derivative).',
       ),
+    numericType: z
+      .enum(['number', 'BigNumber', 'Fraction'])
+      .default('number')
+      .describe(
+        'Numeric type for evaluate. "number" (default): 64-bit IEEE 754 float — fastest, standard precision. "BigNumber": arbitrary-precision decimal — use when intermediate values overflow 64-bit float (e.g. large factorial ratios like 10000!/9999!); slower than "number". "Fraction": exact rational arithmetic — eliminates floating-point rounding (e.g. 0.1 + 0.2 = 0.3 exactly); limited to expressions without transcendental functions. Ignored for symbolic operations (simplify, derivative). When "number" evaluation produces a non-finite result (undefined_result error), retry with "BigNumber".',
+      ),
   }),
   output: z.object({
     result: z.string().describe('The computed result as a string.'),
@@ -83,6 +89,12 @@ export const calculateTool = tool('calculate', {
       .optional()
       .describe(
         'Significant-digit precision applied to the result. Omitted when full precision was used or the operation is symbolic.',
+      ),
+    unchanged: z
+      .boolean()
+      .optional()
+      .describe(
+        "Present only for simplify operations. true means the simplifier returned the expression unchanged — it could not reduce it further (e.g. rational expressions requiring polynomial factoring are beyond math.js's built-in simplifier). false means simplification made progress. Omitted for evaluate and derivative.",
       ),
   }),
   errors: [
@@ -159,12 +171,13 @@ export const calculateTool = tool('calculate', {
     const { expression, operation, scope } = input;
     const variable = input.variable || undefined;
     const precision = typeof input.precision === 'number' ? input.precision : undefined;
+    const numericType = input.numericType;
 
     switch (operation) {
       case 'evaluate':
-        ctx.log.info('Evaluated expression', { expression });
+        ctx.log.info('Evaluated expression', { expression, numericType });
         return {
-          ...math.evaluateExpression(expression, ctx, scope, precision),
+          ...math.evaluateExpression(expression, ctx, scope, precision, numericType),
           expression,
           operation,
           // Omit context fields that carry no signal: scopeVars only when a scope
@@ -172,14 +185,19 @@ export const calculateTool = tool('calculate', {
           ...(scope ? { scopeVars: Object.keys(scope) } : {}),
           ...(precision !== undefined ? { precisionUsed: precision } : {}),
         };
-      case 'simplify':
-        ctx.log.info('Simplified expression', { expression });
+      case 'simplify': {
+        const simplifyResult = math.simplifyExpression(expression, ctx);
+        ctx.log.info('Simplified expression', { expression, unchanged: simplifyResult.unchanged });
         // Symbolic operations never carry scope/precision context — omit both.
+        // Always include unchanged so callers can detect no-op simplifications (#1).
         return {
-          ...math.simplifyExpression(expression, ctx),
+          result: simplifyResult.result,
+          resultType: simplifyResult.resultType,
           expression,
           operation,
+          unchanged: simplifyResult.unchanged,
         };
+      }
       case 'derivative':
         if (!variable) {
           throw ctx.fail(
@@ -204,11 +222,24 @@ export const calculateTool = tool('calculate', {
     const scopeVars =
       output.scopeVars && output.scopeVars.length > 0 ? output.scopeVars.join(', ') : 'none';
     const precision = output.precisionUsed ?? 'full';
-    return [
-      {
-        type: 'text',
-        text: `**Expression:** \`${output.expression}\`\n**Operation:** ${output.operation}\n**Result:** ${output.result}\n**Type:** ${output.resultType}\n**Scope variables:** ${scopeVars}\n**Precision:** ${precision}`,
-      },
+    const lines = [
+      `**Expression:** \`${output.expression}\``,
+      `**Operation:** ${output.operation}`,
+      `**Result:** ${output.result}`,
+      `**Type:** ${output.resultType}`,
     ];
+    if (output.unchanged !== undefined) {
+      // Present only for simplify — unchanged: true means the simplifier made no progress.
+      lines.push(
+        output.unchanged
+          ? '**Simplified:** unchanged — expression could not be reduced further'
+          : '**Simplified:** reduced (unchanged: false)',
+      );
+    }
+    if (output.operation !== 'simplify') {
+      lines.push(`**Scope variables:** ${scopeVars}`);
+      lines.push(`**Precision:** ${precision}`);
+    }
+    return [{ type: 'text', text: lines.join('\n') }];
   },
 });

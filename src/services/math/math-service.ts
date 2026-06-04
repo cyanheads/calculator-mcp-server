@@ -10,7 +10,7 @@ import type { Context } from '@cyanheads/mcp-ts-core';
 import { timeout, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { all, create, type MathNode, type SimplifyRule, type UnitDefinition } from 'mathjs';
 import type { ServerConfig } from '@/config/server-config.js';
-import type { MathResult } from './types.js';
+import type { MathResult, NumericType } from './types.js';
 
 /**
  * Custom simplification rules extending math.js defaults.
@@ -196,73 +196,155 @@ function normalizeNotation(expression: string): string {
   );
 }
 
+/** Bundled references extracted from a single math.js instance. */
+interface MathInstance {
+  evaluate: (expr: string, scope?: Record<string, number>) => unknown;
+  format: (
+    value: unknown,
+    options?: { precision?: number; lowerExp?: number; upperExp?: number },
+  ) => string;
+  typeOf: (value: unknown) => string;
+}
+
+/** Create and harden a math.js instance with the given numeric type. */
+function createMathInstance(number: 'number' | 'BigNumber' | 'Fraction'): MathInstance {
+  // biome-ignore lint/style/noNonNullAssertion: math.js types declare `all` as potentially undefined, but it's always defined at runtime
+  const math = create(all!, { number });
+
+  // Capture references BEFORE the override step — the import shim replaces these
+  // on the instance, so binding after would capture the disabled stubs.
+  const evaluate = math.evaluate.bind(math);
+  const format = math.format.bind(math);
+  const typeOf = math.typeOf.bind(math);
+  // Capture math.import before it's disabled — needed to install the config guard below.
+  const mathImport = math.import.bind(math);
+
+  // For BigNumber/Fraction instances, also capture config before the override.
+  // math.js BigNumber arithmetic reads config() internally to get the Decimal.js precision.
+  // Replacing config with a throwing stub breaks that and causes:
+  //   [DecimalError] Invalid argument: precision: NaN
+  // Instead, we install a read-only guard after the disable step: reads pass through,
+  // writes throw — blocking expression-scope config mutations while preserving internal access.
+  const realConfig = number !== 'number' ? math.config.bind(math) : null;
+
+  // Register custom units and natural-language function aliases.
+  // Must run before createUnit/import are disabled below.
+  math.createUnit(CUSTOM_UNITS);
+  mathImport({ average: math.mean, avg: math.mean });
+
+  // Disable dangerous functions in expression scope.
+  // `config` is excluded here for BigNumber/Fraction instances — installed as a
+  // read-only guard via mathImport after this block (import is also disabled here).
+  const disabled: Record<string, unknown> = {};
+  for (const fn of DISABLED_FUNCTIONS) {
+    if (fn === 'config' && number !== 'number') continue; // read-only guard installed below
+    disabled[fn] = () => {
+      throw new Error(`Function "${fn}" is disabled for security.`);
+    };
+  }
+  // Redact constants that leak implementation details
+  for (const [key, value] of Object.entries(REDACTED_CONSTANTS)) {
+    disabled[key] = value;
+  }
+  mathImport(disabled, { override: true });
+
+  // For BigNumber/Fraction: install a read-only config guard using the pre-captured
+  // mathImport reference (math.import is now disabled in the expression scope).
+  //
+  // Two access patterns must be preserved for math.js internals:
+  //   1. config()          — gamma/factorial call this to read the full config object
+  //   2. config.precision  — gamma accesses precision directly as a property on the function
+  //
+  // Replacing config with a plain stub breaks both; the guard function below satisfies
+  // both patterns while blocking write access (calls with a non-empty options object).
+  if (realConfig !== null) {
+    const currentConfig = (
+      realConfig as unknown as (o: Record<string, unknown>) => Record<string, unknown>
+    )({});
+    const configGuard = Object.assign(
+      (options?: Record<string, unknown>) => {
+        if (options !== undefined && Object.keys(options).length > 0) {
+          throw new Error('"config" is disabled for security.');
+        }
+        return currentConfig;
+      },
+      currentConfig, // spread all config props (precision, relTol, …) onto the function object
+    );
+    mathImport({ config: configGuard }, { override: true });
+  }
+
+  return { evaluate, format, typeOf };
+}
+
 export class MathService {
-  private readonly evaluate: (expr: string, scope?: Record<string, number>) => unknown;
+  /** Default IEEE 754 instance — used for the vast majority of evaluations. */
+  private readonly defaultInstance: MathInstance;
+  /** BigNumber instance — arbitrary precision; selected via numericType: "BigNumber". */
+  private readonly bigNumberInstance: MathInstance;
+  /** Fraction instance — exact rational arithmetic; selected via numericType: "Fraction". */
+  private readonly fractionInstance: MathInstance;
+
   private readonly parse: (expr: string) => MathNode;
   private readonly simplify: (expr: string, rules?: SimplifyRule[]) => { toString(): string };
   private readonly derivative: (expr: string, variable: string) => { toString(): string };
   private readonly simplifyRules: SimplifyRule[];
-  private readonly format: (
-    value: unknown,
-    options?: { precision?: number; lowerExp?: number; upperExp?: number },
-  ) => string;
-  private readonly typeOf: (value: unknown) => string;
   private readonly config: ServerConfig;
 
   constructor(config: ServerConfig) {
     this.config = config;
+
     // biome-ignore lint/style/noNonNullAssertion: math.js types declare `all` as potentially undefined, but it's always defined at runtime
-    const math = create(all!);
+    const baseMath = create(all!);
 
-    // Save references before overriding — these bypass the expression scope restrictions
-    this.evaluate = math.evaluate.bind(math);
-    this.parse = math.parse.bind(math);
-    this.simplify = math.simplify.bind(math);
-    this.derivative = math.derivative.bind(math);
-    this.simplifyRules = [...math.simplify.rules, ...TRIG_SIMPLIFY_RULES];
-    this.format = math.format.bind(math);
-    this.typeOf = math.typeOf.bind(math);
+    // Save references for symbolic operations — these don't need numeric-type variants.
+    // parse / simplify / derivative operate on the AST, not numeric values.
+    this.parse = baseMath.parse.bind(baseMath);
+    this.simplify = baseMath.simplify.bind(baseMath);
+    this.derivative = baseMath.derivative.bind(baseMath);
+    this.simplifyRules = [...baseMath.simplify.rules, ...TRIG_SIMPLIFY_RULES];
 
-    // Register custom units and natural-language function aliases.
-    // Must run before createUnit/import are disabled below.
-    math.createUnit(CUSTOM_UNITS);
-    math.import({ average: math.mean, avg: math.mean });
-
-    // Disable dangerous functions in expression scope
-    const disabled: Record<string, unknown> = {};
-    for (const fn of DISABLED_FUNCTIONS) {
-      disabled[fn] = () => {
-        throw new Error(`Function "${fn}" is disabled for security.`);
-      };
-    }
-    // Redact constants that leak implementation details
-    for (const [key, value] of Object.entries(REDACTED_CONSTANTS)) {
-      disabled[key] = value;
-    }
-    math.import(disabled, { override: true });
+    // Pre-initialize one hardened instance per numeric type so numeric-type selection
+    // at evaluation time is a simple Map lookup, not a per-request reconfiguration.
+    this.defaultInstance = createMathInstance('number');
+    this.bigNumberInstance = createMathInstance('BigNumber');
+    this.fractionInstance = createMathInstance('Fraction');
   }
 
-  /** Evaluate a math expression with optional variable scope and precision. */
+  /** Select the pre-initialized evaluate/format/typeOf bundle for a given numeric type. */
+  private instanceFor(numericType: NumericType): MathInstance {
+    switch (numericType) {
+      case 'BigNumber':
+        return this.bigNumberInstance;
+      case 'Fraction':
+        return this.fractionInstance;
+      default:
+        return this.defaultInstance;
+    }
+  }
+
+  /** Evaluate a math expression with optional variable scope, precision, and numeric type. */
   evaluateExpression(
     expression: string,
     ctx: Context,
     scope?: Record<string, number>,
     precision?: number,
+    numericType: NumericType = 'number',
   ): MathResult {
     this.validateInput(expression, ctx);
     if (scope) this.validateScope(scope, ctx);
     const normalized = normalizeNotation(expression);
     this.validateNoFunctionStringification(normalized, ctx);
+    const inst = this.instanceFor(numericType);
     const raw = this.runWithTimeout(
-      () => (scope ? this.evaluate(normalized, scope) : this.evaluate(normalized)),
+      () => (scope ? inst.evaluate(normalized, scope) : inst.evaluate(normalized)),
       ctx,
     );
-    const resultType = this.typeOf(raw);
+    const resultType = inst.typeOf(raw);
     this.validateResultType(resultType, ctx);
     this.validateFinite(raw, ctx);
     // Match JS Number.toString thresholds — math.js defaults to exp ≥ 5,
     // which would render 83810205 as "8.3810205e+7".
-    const result = this.format(raw, {
+    const result = inst.format(raw, {
       lowerExp: -6,
       upperExp: 21,
       ...(precision != null && { precision }),
@@ -275,13 +357,28 @@ export class MathService {
   simplifyExpression(expression: string, ctx: Context): MathResult {
     this.validateInput(expression, ctx);
     const normalized = normalizeNotation(expression);
+    // Capture the AST-normalized form of the input before simplification so we
+    // can detect whether the simplifier made any progress. String comparison is
+    // not sufficient — formatting-only changes like `x+1` vs `x + 1` should not
+    // count as progress. We parse both sides and compare their `.toString()` output,
+    // which normalises whitespace and operator representation consistently.
+    let inputNormalized: string;
+    try {
+      inputNormalized = this.parse(normalized).toString();
+    } catch {
+      // If the expression cannot be parsed, let the simplify step surface the error
+      // with full math.js context. Set to the raw input so the unchanged flag is
+      // false (we don't know, but a parse error is not a no-op simplification).
+      inputNormalized = '';
+    }
     const simplified = this.runWithTimeout(
       () => this.simplify(normalized, this.simplifyRules),
       ctx,
     );
     const result = simplified.toString();
     this.validateResultSize(result, ctx);
-    return { result, resultType: 'string' };
+    const unchanged = inputNormalized !== '' && inputNormalized === result;
+    return { result, resultType: 'string', unchanged };
   }
 
   /** Compute the symbolic derivative of an expression with respect to a variable. */
@@ -536,7 +633,17 @@ Expression: \`x^2 + y\` => 28
 Use the precision parameter (1\u201316 significant digits) for numeric results.
 
 ### Operations
-- **evaluate** (default): Compute a numeric result
+
+- **evaluate** (default): Compute a numeric result. Use the \`numericType\` parameter to control precision:
+  - \`"number"\` (default): 64-bit IEEE 754 float — fastest. Standard for most calculations.
+  - \`"BigNumber"\`: Arbitrary-precision decimal — use when intermediate values overflow (e.g. \`10000! / 9999!\` overflows as a 64-bit float but evaluates correctly as a BigNumber). Slower than \`"number"\`.
+  - \`"Fraction"\`: Exact rational arithmetic — eliminates floating-point rounding (e.g. \`0.1 + 0.2 = 0.3\` exactly). Limited to expressions without transcendental functions (sin, log, etc.).
+
+  When \`"number"\` evaluation returns an \`undefined_result\` error (division by zero, overflow), retry with \`numericType: "BigNumber"\`.
+
 - **simplify**: Reduce algebraic expressions symbolically (e.g., "2x + 3x" => "5 * x", "sin(x)^2 + cos(x)^2" => 1). Supports algebraic rules and common trigonometric identities (Pythagorean, double-angle, tan/sec/csc/cot relationships).
+
+  **Known limits:** The built-in simplifier does not perform polynomial factoring or rational cancellation. Expressions like \`(x^2 - 1) / (x - 1)\` are returned unchanged (\`unchanged: true\` in the output). For these cases, consider rewriting by hand or using \`evaluate\` with a numeric scope.
+
 - **derivative**: Compute symbolic derivative (requires variable parameter, e.g., variable: "x")
 `;

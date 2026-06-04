@@ -748,3 +748,130 @@ describe('MathService with custom config', () => {
     expect(() => svc.evaluateExpression('12345', ctx)).toThrow('exceeds maximum size');
   });
 });
+
+// ---------------------------------------------------------------------------
+// numericType — BigNumber and Fraction evaluate paths (#7)
+// ---------------------------------------------------------------------------
+
+describe('numericType escalation', () => {
+  it('returns BigNumber result type when numericType is "BigNumber"', () => {
+    const math = getMathService();
+    const ctx = mockCtx();
+    const { result, resultType } = math.evaluateExpression(
+      '2 + 2',
+      ctx,
+      undefined,
+      undefined,
+      'BigNumber',
+    );
+    expect(result).toBe('4');
+    expect(resultType).toBe('BigNumber');
+  });
+
+  it('resolves large factorial ratio without overflow using BigNumber', () => {
+    // 10000! / 9999! overflows as IEEE 754 — the default "number" path produces NaN
+    // and triggers an undefined_result error. BigNumber computes it without overflow.
+    const math = getMathService();
+    const ctx = mockCtx();
+    const { result, resultType } = math.evaluateExpression(
+      '10000! / 9999!',
+      ctx,
+      undefined,
+      undefined,
+      'BigNumber',
+    );
+    expect(resultType).toBe('BigNumber');
+    // Mathematical result is 10000; BigNumber gives a high-precision approximation.
+    expect(parseFloat(result)).toBeCloseTo(10000, 0);
+  });
+
+  it('default "number" path still rejects large factorial ratio as undefined_result', () => {
+    const math = getMathService();
+    const ctx = mockCtx();
+    // Regression guard: BigNumber addition must not alter the default path.
+    expectMcpError(
+      () => math.evaluateExpression('10000! / 9999!', ctx),
+      JsonRpcErrorCode.ValidationError,
+      'undefined_result',
+    );
+  });
+
+  it('returns Fraction result type when numericType is "Fraction"', () => {
+    const math = getMathService();
+    const ctx = mockCtx();
+    const { result, resultType } = math.evaluateExpression(
+      '0.1 + 0.2',
+      ctx,
+      undefined,
+      undefined,
+      'Fraction',
+    );
+    expect(resultType).toBe('Fraction');
+    // math.format() renders Fraction values in fraction notation (e.g. "3/10").
+    // The key property is exact arithmetic — 0.1 + 0.2 in Fraction mode is 3/10,
+    // not 0.30000000000000004 as in IEEE 754.
+    expect(result).toMatch(/3\/10|0\.3/);
+  });
+
+  it('security guards remain active on the BigNumber instance', () => {
+    // Disabled functions must throw even on the BigNumber-configured instance.
+    expectMcpError(
+      () =>
+        calculateTool.handler(
+          parse({ expression: 'evaluate("2+3")', numericType: 'BigNumber' }),
+          mockCtx(),
+        ),
+      JsonRpcErrorCode.ValidationError,
+      'parse_failed',
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// simplify unchanged detection (#1)
+// ---------------------------------------------------------------------------
+
+describe('simplify unchanged detection', () => {
+  it('returns unchanged: false when simplification makes progress', () => {
+    const math = getMathService();
+    const ctx = mockCtx();
+    const { result, unchanged } = math.simplifyExpression('2x + 3x', ctx);
+    expect(result).toBe('5 * x');
+    expect(unchanged).toBe(false);
+  });
+
+  it('returns unchanged: true for rational expression requiring polynomial factoring', () => {
+    // math.js built-in simplifier cannot factor (x^2-1)/(x-1) to (x+1).
+    const math = getMathService();
+    const ctx = mockCtx();
+    const { unchanged } = math.simplifyExpression('(x^2 - 1) / (x - 1)', ctx);
+    expect(unchanged).toBe(true);
+  });
+
+  it('returns unchanged: false when a trig identity collapses the expression', () => {
+    const math = getMathService();
+    const ctx = mockCtx();
+    const { result, unchanged } = math.simplifyExpression('sin(x)^2 + cos(x)^2', ctx);
+    expect(result).toBe('1');
+    expect(unchanged).toBe(false);
+  });
+
+  it('normalised comparison ignores formatting differences (x+1 vs x + 1)', () => {
+    // If the simplifier only re-formats the expression (spacing/operators) without
+    // changing its structure, unchanged should be true — both AST-normalised forms match.
+    // "x + 0" simplifies to "x" — a real structural change, so unchanged is false.
+    const math = getMathService();
+    const ctx = mockCtx();
+    const { result, unchanged } = math.simplifyExpression('x + 0', ctx);
+    expect(result).toBe('x');
+    expect(unchanged).toBe(false);
+  });
+
+  it('always includes unchanged in the result object', () => {
+    const math = getMathService();
+    const ctx = mockCtx();
+    const result = math.simplifyExpression('2x + 3x', ctx);
+    expect(result).toHaveProperty('unchanged');
+    expect(typeof result.unchanged).toBe('boolean');
+  });
+});
