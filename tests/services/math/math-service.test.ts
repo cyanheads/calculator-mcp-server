@@ -418,6 +418,13 @@ describe('evaluate edge cases', () => {
     expect(result.result).toBe('20');
   });
 
+  it('evaluates std (sample standard deviation) — canonical target of the stdev/stddev aliases', async () => {
+    const result = await Promise.resolve(
+      calculateTool.handler(parse({ expression: 'std([2, 4, 6])' }), mockCtx()),
+    );
+    expect(result.result).toBe('2');
+  });
+
   it('evaluates log with base argument', async () => {
     // log(1000, 10) = 3 mathematically; floating-point gives ~2.9999...
     // Use precision to round to a clean value.

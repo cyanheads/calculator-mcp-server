@@ -21,7 +21,7 @@ export const calculateTool = tool('calculate', {
       .string()
       .min(1)
       .describe(
-        `One mathematical expression per call — neither \`;\` nor newlines separate statements. Inside matrices, \`;\` separates rows (e.g. \`[1, 2; 3, 4]\`). Supports arithmetic (+, -, *, /, ^, %), functions (sin, cos, sqrt, log, abs, round, etc.), constants (pi, e, phi, i), matrices, units (5 kg to lbs), and variables (when scope is provided). Standard notation \`ln\` and \`arc*\` (e.g. \`arcsin\`, \`arctan\`) is accepted alongside the math.js names \`log\` and \`asin\`/\`atan\`.`,
+        `One mathematical expression per call — neither \`;\` nor newlines separate statements. Inside matrices, \`;\` separates rows (e.g. \`[1, 2; 3, 4]\`). Supports arithmetic (+, -, *, /, ^, %), functions across arithmetic/trig (sin, cos, sqrt, log, abs, round), statistics (mean, median, std, variance), combinatorics (factorial, permutations, combinations), and matrix (det, inv, transpose), plus constants (pi, e, phi, i), units (5 kg to lbs), and variables (when scope is provided). Standard notation \`ln\` and \`arc*\` (e.g. \`arcsin\`, \`arctan\`) is accepted alongside the math.js names \`log\` and \`asin\`/\`atan\`; common synonyms such as \`stdev\`, \`permute\`, and \`nCr\` resolve to their math.js names (\`std\`, \`permutations\`, \`combinations\`).`,
       ),
     operation: z
       .enum(['evaluate', 'simplify', 'derivative'])

@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.3.4](changelog/0.3.x/0.3.4.md) — 2026-06-15
+
+Statistics/combinatorics function-name aliases (stdev, stddev, permute, nPr, choose, nCr) and a richer expression description that names canonical functions per advertised category.
+
 ## [0.3.3](changelog/0.3.x/0.3.3.md) — 2026-06-15
 
 Adopt @cyanheads/mcp-ts-core ^0.10.6: explicit name/title server identity, Dockerfile image.version label + /healthz HEALTHCHECK, post-pack bundle cleaner, devcheck identity/antipattern/packaging checks.

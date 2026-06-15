@@ -161,6 +161,27 @@ describe('calculate tool', () => {
     });
   });
 
+  // #17: statistics/combinatorics synonyms from other ecosystems (Excel/NumPy/
+  // calculator notation) resolve to their math.js names, so an agent's natural
+  // guess returns a result instead of an "undefined function" error.
+  describe('statistics & combinatorics aliases (#17)', () => {
+    const aliasCases = [
+      ['stdev([2, 4, 6])', '2', 'std'],
+      ['stddev([2, 4, 6])', '2', 'std'],
+      ['permute(5, 2)', '20', 'permutations'],
+      ['nPr(5, 2)', '20', 'permutations'],
+      ['choose(5, 2)', '10', 'combinations'],
+      ['nCr(5, 2)', '10', 'combinations'],
+    ];
+
+    for (const [expression, expected, canonical] of aliasCases) {
+      it(`evaluates ${expression} as alias for ${canonical}`, async () => {
+        const result = await call({ expression });
+        expect(result.result).toBe(expected);
+      });
+    }
+  });
+
   describe('simplify', () => {
     it('simplifies algebraic expressions', async () => {
       const result = await call({ expression: '2x + 3x', operation: 'simplify' });

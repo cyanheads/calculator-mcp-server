@@ -227,10 +227,24 @@ function createMathInstance(number: 'number' | 'BigNumber' | 'Fraction'): MathIn
   // writes throw — blocking expression-scope config mutations while preserving internal access.
   const realConfig = number !== 'number' ? math.config.bind(math) : null;
 
-  // Register custom units and natural-language function aliases.
+  // Register custom units and function-name aliases (natural-language plus common
+  // cross-ecosystem synonyms from Excel/NumPy/calculator notation). None are math.js
+  // builtins, so the imports are purely additive — they turn an agent's natural guess
+  // into a result instead of an "undefined function" error. Statistics/combinatorics
+  // functions aren't differentiable, so a value-alias suffices (unlike ln/arc*, which
+  // need the pre-parse rewrite to stay in the derivative table).
   // Must run before createUnit/import are disabled below.
   math.createUnit(CUSTOM_UNITS);
-  mathImport({ average: math.mean, avg: math.mean });
+  mathImport({
+    average: math.mean,
+    avg: math.mean,
+    stdev: math.std,
+    stddev: math.std,
+    permute: math.permutations,
+    nPr: math.permutations,
+    choose: math.combinations,
+    nCr: math.combinations,
+  });
 
   // Disable dangerous functions in expression scope.
   // `config` is excluded here for BigNumber/Fraction instances — installed as a
@@ -576,13 +590,13 @@ abs, ceil, floor, round, sign, sqrt, cbrt, exp, expm1, log (also: ln), log2, log
 sin, cos, tan, asin (arcsin), acos (arccos), atan (arctan), atan2, sinh, cosh, tanh, asinh (arcsinh), acosh (arccosh), atanh (arctanh), sec, csc, cot, asec (arcsec), acsc (arccsc), acot (arccot), sech (arcsech), csch (arccsch), coth (arccoth)
 
 ### Statistics
-mean (aliases: average, avg), median, mode, std, variance, min, max, sum, prod, quantileSeq, mad, count
+mean (aliases: average, avg), median, mode, std (aliases: stdev, stddev), variance, min, max, sum, prod, quantileSeq, mad, count
 
 ### Matrix
 det, inv, transpose, trace, zeros, ones, identity, diag, size, reshape, flatten, concat, sort, cross, dot, eigs, expm, sqrtm, kron, pinv, range
 
 ### Combinatorics
-factorial, gamma, permutations, combinations, catalan, bellNumbers, stirlingS2, composition, multinomial
+factorial, gamma, permutations (aliases: permute, nPr), combinations (aliases: choose, nCr), catalan, bellNumbers, stirlingS2, composition, multinomial
 
 ### Complex Numbers
 re, im, conj, arg, complex
