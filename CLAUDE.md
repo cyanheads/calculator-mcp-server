@@ -1,8 +1,8 @@
 # Agent Protocol
 
 **Server:** calculator-mcp-server
-**Version:** 0.3.2
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.9.21`
+**Version:** 0.3.3
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.10.6`
 **Engines:** Bun ≥1.3.0, Node ≥24.0.0
 **MCP SDK:** `@modelcontextprotocol/sdk` 1.29.0
 **Zod:** 4.4.3
@@ -269,7 +269,7 @@ Available skills:
 | `code-simplifier` | Post-session code review and cleanup against `git diff` — modernize syntax, consolidate duplication, align with codebase |
 | `git-wrapup` | Land working-tree changes as a versioned commit + annotated tag — version bump, changelog, verify, tag. Local only. |
 | `tool-defs-analysis` | Read-only audit of MCP definition language across the surface — voice, leaks, defaults, recovery hints, output descriptions |
-| `devcheck` | Lint, format, typecheck, audit |
+| `techniques` | Reusable response/data-shaping patterns (outline-on-overflow, capped-list disclosure) |
 | `security-pass` | Audit server for MCP-flavored security gaps: output injection, scope blast radius, input sinks, tenant isolation |
 | `polish-docs-meta` | Finalize docs, README, metadata, and agent protocol for shipping |
 | `release-and-publish` | Push + npm + MCP Registry + GH Release + Docker. Picks up from `git-wrapup` |
