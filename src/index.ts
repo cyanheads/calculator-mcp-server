@@ -11,6 +11,8 @@ import { calculateTool } from '@/mcp-server/tools/definitions/calculate.tool.js'
 import { initMathService } from '@/services/math/math-service.js';
 
 await createApp({
+  name: 'calculator-mcp-server',
+  title: 'calculator-mcp-server',
   tools: [calculateTool],
   resources: [helpResource],
   instructions:
