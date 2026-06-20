@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.3.5](changelog/0.3.x/0.3.5.md) — 2026-06-20
+
+Adopt mcp-ts-core ^0.10.9: two new devcheck guards (floating dependency specifiers, plugin marketplace manifest correctness), re-synced skills and tooling scripts.
+
 ## [0.3.4](changelog/0.3.x/0.3.4.md) — 2026-06-15
 
 Statistics/combinatorics function-name aliases (stdev, stddev, permute, nPr, choose, nCr) and a richer expression description that names canonical functions per advertised category.
