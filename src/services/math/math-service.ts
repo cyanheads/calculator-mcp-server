@@ -97,6 +97,15 @@ const BLOCKED_RESULT_TYPES = new Set(['function', 'Function', 'ResultSet', 'Pars
 const STRINGIFYING_METHODS = new Set(['toString', 'toLocaleString']);
 
 /**
+ * math.js error thrown when a Fraction-mode expression yields a value that has
+ * no exact rational representation (`sqrt`, `sin`, `log`, …). math.js reports it
+ * as an implicit type-conversion failure; paired with a `numericType === 'Fraction'`
+ * guard it maps to the actionable `fraction_unsupported` error instead of the
+ * misleading, syntax-oriented `parse_failed`. See {@link MathService.runWithTimeout}.
+ */
+const FRACTION_CONVERSION_ERROR = /Cannot implicitly convert a Fraction/;
+
+/**
  * Scope key names that could pollute the object prototype chain or shadow
  * critical Object.prototype methods. Validated before passing to math.js.
  */
@@ -198,11 +207,16 @@ function normalizeNotation(expression: string): string {
 
 /** Bundled references extracted from a single math.js instance. */
 interface MathInstance {
+  derivative: (expr: string, variable: string) => { toString(): string };
   evaluate: (expr: string, scope?: Record<string, number>) => unknown;
   format: (
     value: unknown,
     options?: { precision?: number; lowerExp?: number; upperExp?: number },
   ) => string;
+  parse: (expr: string) => MathNode;
+  simplify: (expr: string, rules?: SimplifyRule[]) => { toString(): string };
+  /** math.js default simplify rules, captured before the hardening override. */
+  simplifyRules: SimplifyRule[];
   typeOf: (value: unknown) => string;
 }
 
@@ -216,6 +230,14 @@ function createMathInstance(number: 'number' | 'BigNumber' | 'Fraction'): MathIn
   const evaluate = math.evaluate.bind(math);
   const format = math.format.bind(math);
   const typeOf = math.typeOf.bind(math);
+  // Symbolic operations are captured here too so a hardened instance can back
+  // simplify/derivative — constant-folding inside them then hits the same
+  // disabled-function / redacted-constant overrides applied below (#18). `.rules`
+  // must be read before binding, since bind() drops the function's own properties.
+  const parse = math.parse.bind(math);
+  const simplify = math.simplify.bind(math);
+  const derivative = math.derivative.bind(math);
+  const simplifyRules = [...math.simplify.rules] as SimplifyRule[];
   // Capture math.import before it's disabled — needed to install the config guard below.
   const mathImport = math.import.bind(math);
 
@@ -244,6 +266,8 @@ function createMathInstance(number: 'number' | 'BigNumber' | 'Fraction'): MathIn
     nPr: math.permutations,
     choose: math.combinations,
     nCr: math.combinations,
+    length: math.count,
+    len: math.count,
   });
 
   // Disable dangerous functions in expression scope.
@@ -287,7 +311,7 @@ function createMathInstance(number: 'number' | 'BigNumber' | 'Fraction'): MathIn
     mathImport({ config: configGuard }, { override: true });
   }
 
-  return { evaluate, format, typeOf };
+  return { evaluate, format, typeOf, parse, simplify, derivative, simplifyRules };
 }
 
 export class MathService {
@@ -307,21 +331,22 @@ export class MathService {
   constructor(config: ServerConfig) {
     this.config = config;
 
-    // biome-ignore lint/style/noNonNullAssertion: math.js types declare `all` as potentially undefined, but it's always defined at runtime
-    const baseMath = create(all!);
-
-    // Save references for symbolic operations — these don't need numeric-type variants.
-    // parse / simplify / derivative operate on the AST, not numeric values.
-    this.parse = baseMath.parse.bind(baseMath);
-    this.simplify = baseMath.simplify.bind(baseMath);
-    this.derivative = baseMath.derivative.bind(baseMath);
-    this.simplifyRules = [...baseMath.simplify.rules, ...TRIG_SIMPLIFY_RULES];
-
     // Pre-initialize one hardened instance per numeric type so numeric-type selection
     // at evaluation time is a simple Map lookup, not a per-request reconfiguration.
     this.defaultInstance = createMathInstance('number');
     this.bigNumberInstance = createMathInstance('BigNumber');
     this.fractionInstance = createMathInstance('Fraction');
+
+    // Symbolic operations (parse / simplify / derivative) operate on the AST and are
+    // numeric-type-agnostic, so they reuse the hardened default instance rather than a
+    // separate unhardened one. This ensures the constant-folding math.js performs inside
+    // simplify/derivative resolves disabled functions to their throwing stubs and reads
+    // the redacted `version` — closing the bypass where folded `evaluate("…")` ran on an
+    // unhardened instance (#18).
+    this.parse = this.defaultInstance.parse;
+    this.simplify = this.defaultInstance.simplify;
+    this.derivative = this.defaultInstance.derivative;
+    this.simplifyRules = [...this.defaultInstance.simplifyRules, ...TRIG_SIMPLIFY_RULES];
   }
 
   /** Select the pre-initialized evaluate/format/typeOf bundle for a given numeric type. */
@@ -352,6 +377,7 @@ export class MathService {
     const raw = this.runWithTimeout(
       () => (scope ? inst.evaluate(normalized, scope) : inst.evaluate(normalized)),
       ctx,
+      numericType,
     );
     const resultType = inst.typeOf(raw);
     this.validateResultType(resultType, ctx);
@@ -371,6 +397,7 @@ export class MathService {
   simplifyExpression(expression: string, ctx: Context): MathResult {
     this.validateInput(expression, ctx);
     const normalized = normalizeNotation(expression);
+    this.validateNoFunctionStringification(normalized, ctx);
     // Capture the AST-normalized form of the input before simplification so we
     // can detect whether the simplifier made any progress. String comparison is
     // not sufficient — formatting-only changes like `x+1` vs `x + 1` should not
@@ -399,6 +426,7 @@ export class MathService {
   differentiateExpression(expression: string, variable: string, ctx: Context): MathResult {
     this.validateInput(expression, ctx);
     const normalized = normalizeNotation(expression);
+    this.validateNoFunctionStringification(normalized, ctx);
     const derived = this.runWithTimeout(() => this.derivative(normalized, variable), ctx);
     const result = derived.toString();
     this.validateResultSize(result, ctx);
@@ -512,8 +540,13 @@ export class MathService {
     }
   }
 
-  /** Runs a synchronous function inside a vm sandbox with timeout protection. */
-  private runWithTimeout<T>(fn: () => T, ctx: Context): T {
+  /**
+   * Runs a synchronous function inside a vm sandbox with timeout protection.
+   * `numericType` is supplied only by the evaluate path so a Fraction-mode
+   * conversion failure can be remapped to the actionable `fraction_unsupported`
+   * error instead of the misleading `parse_failed` (#19).
+   */
+  private runWithTimeout<T>(fn: () => T, ctx: Context, numericType?: NumericType): T {
     const sandbox = { fn, result: undefined as T };
     try {
       vm.runInNewContext('result = fn()', sandbox, { timeout: this.config.evaluationTimeoutMs });
@@ -525,8 +558,17 @@ export class MathService {
           { reason: 'evaluation_timeout', ...ctx.recoveryFor('evaluation_timeout') },
         );
       }
-      // All non-timeout errors from the VM are expression-related
       const message = err instanceof Error ? err.message : String(err);
+      // Fraction mode cannot represent an irrational/transcendental result (sqrt, sin,
+      // log, …); math.js surfaces this as an implicit-conversion error. Remap to a
+      // dedicated, actionable error rather than the syntax-oriented parse_failed.
+      if (numericType === 'Fraction' && FRACTION_CONVERSION_ERROR.test(message)) {
+        throw validationError(
+          'This expression has no exact fractional value (irrational or transcendental result, e.g. sqrt, sin, log). Retry with numericType "number" or "BigNumber".',
+          { reason: 'fraction_unsupported', ...ctx.recoveryFor('fraction_unsupported') },
+        );
+      }
+      // All other non-timeout errors from the VM are expression-related.
       throw validationError(`Invalid expression: ${message}`, {
         reason: 'parse_failed',
         ...ctx.recoveryFor('parse_failed'),
@@ -590,7 +632,7 @@ abs, ceil, floor, round, sign, sqrt, cbrt, exp, expm1, log (also: ln), log2, log
 sin, cos, tan, asin (arcsin), acos (arccos), atan (arctan), atan2, sinh, cosh, tanh, asinh (arcsinh), acosh (arccosh), atanh (arctanh), sec, csc, cot, asec (arcsec), acsc (arccsc), acot (arccot), sech (arcsech), csch (arccsch), coth (arccoth)
 
 ### Statistics
-mean (aliases: average, avg), median, mode, std (aliases: stdev, stddev), variance, min, max, sum, prod, quantileSeq, mad, count
+mean (aliases: average, avg), median, mode, std (aliases: stdev, stddev), variance, min, max, sum, prod, quantileSeq, mad, count (aliases: length, len)
 
 ### Matrix
 det, inv, transpose, trace, zeros, ones, identity, diag, size, reshape, flatten, concat, sort, cross, dot, eigs, expm, sqrtm, kron, pinv, range
@@ -651,7 +693,7 @@ Use the precision parameter (1\u201316 significant digits) for numeric results.
 - **evaluate** (default): Compute a numeric result. Use the \`numericType\` parameter to control precision:
   - \`"number"\` (default): 64-bit IEEE 754 float — fastest. Standard for most calculations.
   - \`"BigNumber"\`: Arbitrary-precision decimal — use when intermediate values overflow (e.g. \`10000! / 9999!\` overflows as a 64-bit float but evaluates correctly as a BigNumber). Slower than \`"number"\`.
-  - \`"Fraction"\`: Exact rational arithmetic — eliminates floating-point rounding (e.g. \`0.1 + 0.2 = 0.3\` exactly). Limited to expressions without transcendental functions (sin, log, etc.).
+  - \`"Fraction"\`: Exact rational arithmetic — eliminates floating-point rounding (e.g. \`0.1 + 0.2 = 0.3\` exactly). Limited to expressions with exactly-rational results; an irrational or transcendental result (\`sqrt(2)\`, \`sin(1)\`, \`log(3)\`, …) fails with a \`fraction_unsupported\` error — use \`"number"\` or \`"BigNumber"\` for those.
 
   When \`"number"\` evaluation returns an \`undefined_result\` error (division by zero, overflow), retry with \`numericType: "BigNumber"\`.
 

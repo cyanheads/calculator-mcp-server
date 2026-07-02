@@ -21,7 +21,7 @@ export const calculateTool = tool('calculate', {
       .string()
       .min(1)
       .describe(
-        `One mathematical expression per call — neither \`;\` nor newlines separate statements. Inside matrices, \`;\` separates rows (e.g. \`[1, 2; 3, 4]\`). Supports arithmetic (+, -, *, /, ^, %), functions across arithmetic/trig (sin, cos, sqrt, log, abs, round), statistics (mean, median, std, variance), combinatorics (factorial, permutations, combinations), and matrix (det, inv, transpose), plus constants (pi, e, phi, i), units (5 kg to lbs), and variables (when scope is provided). Standard notation \`ln\` and \`arc*\` (e.g. \`arcsin\`, \`arctan\`) is accepted alongside the math.js names \`log\` and \`asin\`/\`atan\`; common synonyms such as \`stdev\`, \`permute\`, and \`nCr\` resolve to their math.js names (\`std\`, \`permutations\`, \`combinations\`).`,
+        `One mathematical expression per call — neither \`;\` nor newlines separate statements. Inside matrices, \`;\` separates rows (e.g. \`[1, 2; 3, 4]\`). Supports arithmetic (+, -, *, /, ^, %), functions across arithmetic/trig (sin, cos, sqrt, log, abs, round), statistics (mean, median, std, variance), combinatorics (factorial, permutations, combinations), and matrix (det, inv, transpose), plus constants (pi, e, phi, i), units (5 kg to lbs), and variables (when scope is provided). Standard notation \`ln\` and \`arc*\` (e.g. \`arcsin\`, \`arctan\`) is accepted alongside the math.js names \`log\` and \`asin\`/\`atan\`; common synonyms such as \`stdev\`, \`permute\`, \`nCr\`, and \`length\`/\`len\` resolve to their math.js names (\`std\`, \`permutations\`, \`combinations\`, \`count\`).`,
       ),
     operation: z
       .enum(['evaluate', 'simplify', 'derivative'])
@@ -64,7 +64,7 @@ export const calculateTool = tool('calculate', {
       .enum(['number', 'BigNumber', 'Fraction'])
       .default('number')
       .describe(
-        'Numeric type for evaluate. "number" (default): 64-bit IEEE 754 float — fastest, standard precision. "BigNumber": arbitrary-precision decimal — use when intermediate values overflow 64-bit float (e.g. large factorial ratios like 10000!/9999!); slower than "number". "Fraction": exact rational arithmetic — eliminates floating-point rounding (e.g. 0.1 + 0.2 = 0.3 exactly); limited to expressions without transcendental functions. Ignored for symbolic operations (simplify, derivative). When "number" evaluation produces a non-finite result (undefined_result error), retry with "BigNumber".',
+        'Numeric type for evaluate. "number" (default): 64-bit IEEE 754 float — fastest, standard precision. "BigNumber": arbitrary-precision decimal — use when intermediate values overflow 64-bit float (e.g. large factorial ratios like 10000!/9999!); slower than "number". "Fraction": exact rational arithmetic — eliminates floating-point rounding (e.g. 0.1 + 0.2 = 0.3 exactly); limited to expressions with exactly-rational results — an irrational or transcendental result (sqrt, sin, log, …) fails with fraction_unsupported, so use "number" or "BigNumber" for those. Ignored for symbolic operations (simplify, derivative). When "number" evaluation produces a non-finite result (undefined_result error), retry with "BigNumber".',
       ),
   }),
   output: z.object({
@@ -142,6 +142,13 @@ export const calculateTool = tool('calculate', {
       when: 'Expression evaluated to Infinity, -Infinity, or NaN (e.g., division by zero).',
       recovery:
         'Check for division by zero, log of non-positive numbers, or other undefined operations.',
+    },
+    {
+      reason: 'fraction_unsupported',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'numericType is "Fraction" but the expression has no exact rational value (irrational or transcendental result, e.g. sqrt, sin, log).',
+      recovery:
+        'Retry with numericType "number" or "BigNumber" — those represent irrational and transcendental results.',
     },
     {
       reason: 'parse_failed',

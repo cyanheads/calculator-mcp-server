@@ -293,13 +293,85 @@ describe('function-to-string source non-leakage', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Security: simplify/derivative enforce the same hardening as evaluate (#18)
+// ---------------------------------------------------------------------------
+
+describe('symbolic operations do not bypass the hardened instance (#18)', () => {
+  // simplify/derivative constant-fold subexpressions. Before #18 they ran on a
+  // separate unhardened math.js instance, so a folded `evaluate("…")` executed
+  // the disabled functions and returned math.js internals as a string. They now
+  // reuse the hardened default instance: disabled functions are unreachable to the
+  // folder (the node is left unevaluated) and no internals leak.
+  it('simplify does not fold evaluate("6*7") to 42', () => {
+    const math = getMathService();
+    const { result } = math.simplifyExpression('evaluate("6*7")', mockCtx());
+    expect(result).not.toBe('42');
+    expect(result).toContain('evaluate');
+  });
+
+  it('simplify does not leak the math.js version via evaluate("version")', () => {
+    const math = getMathService();
+    const { result } = math.simplifyExpression('evaluate("version")', mockCtx());
+    expect(result).not.toMatch(/\d+\.\d+\.\d+/);
+  });
+
+  it('simplify does not leak function source via evaluate("cos.toString()")', () => {
+    const math = getMathService();
+    const { result } = math.simplifyExpression('evaluate("cos.toString()")', mockCtx());
+    expect(result).not.toContain('theTypedFn');
+    expect(result).not.toContain('arguments');
+  });
+
+  it('derivative does not leak the version via a folded coefficient', () => {
+    const math = getMathService();
+    const { result } = math.differentiateExpression('x * evaluate("version")', 'x', mockCtx());
+    expect(result).not.toMatch(/\d+\.\d+\.\d+/);
+  });
+
+  it('rejects direct .toString() on a function under simplify', () => {
+    expectMcpError(
+      () =>
+        calculateTool.handler(
+          parse({ expression: 'cos.toString()', operation: 'simplify' }),
+          mockCtx(),
+        ),
+      JsonRpcErrorCode.ValidationError,
+      'disallowed_result_type',
+    );
+  });
+
+  it('rejects direct .toLocaleString() on a function under derivative', () => {
+    expectMcpError(
+      () =>
+        calculateTool.handler(
+          parse({ expression: 'cos.toLocaleString() * x', operation: 'derivative', variable: 'x' }),
+          mockCtx(),
+        ),
+      JsonRpcErrorCode.ValidationError,
+      'disallowed_result_type',
+    );
+  });
+
+  it('preserves legitimate constant folding after hardening', () => {
+    const math = getMathService();
+    expect(math.simplifyExpression('2 + 3', mockCtx()).result).toBe('5');
+    expect(math.simplifyExpression('x * 2 * 3', mockCtx()).result).toBe('6 * x');
+  });
+
+  it('preserves normal derivative results after hardening', () => {
+    const math = getMathService();
+    expect(math.differentiateExpression('x^2', 'x', mockCtx()).result).toMatch(/2\s*\*\s*x/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Security: oversized inputs
 // ---------------------------------------------------------------------------
 
 describe('oversized inputs', () => {
   it('rejects expression exactly at the default limit + 1', () => {
     // Default maxExpressionLength is 1000; craft a 1001-char expression.
-    const longExpr = 'x' + '+1'.repeat(500); // 1001 chars
+    const longExpr = `x${'+1'.repeat(500)}`; // 1001 chars
     expectMcpError(
       () => calculateTool.handler(parse({ expression: longExpr }), mockCtx()),
       JsonRpcErrorCode.ValidationError,
@@ -309,7 +381,7 @@ describe('oversized inputs', () => {
 
   it('accepts an expression exactly at the default limit', async () => {
     // Pad '1' with spaces to exactly 1000 chars. math.js ignores whitespace.
-    const atLimit = '1' + ' '.repeat(999); // exactly 1000 chars
+    const atLimit = `1${' '.repeat(999)}`; // exactly 1000 chars
     expect(atLimit.length).toBe(1000);
     // Should not throw expression_too_long (length is <= 1000, so the guard passes).
     let threw = false;
@@ -831,6 +903,88 @@ describe('numericType escalation', () => {
       JsonRpcErrorCode.ValidationError,
       'parse_failed',
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fraction irrational/transcendental results → fraction_unsupported (#19)
+// ---------------------------------------------------------------------------
+
+describe('Fraction unsupported-result remap (#19)', () => {
+  const irrationalCases = ['sqrt(2)', 'sin(1)', 'log(3)'];
+
+  for (const expr of irrationalCases) {
+    it(`remaps ${expr} to fraction_unsupported`, () => {
+      const math = getMathService();
+      expectMcpError(
+        () => math.evaluateExpression(expr, mockCtx(), undefined, undefined, 'Fraction'),
+        JsonRpcErrorCode.ValidationError,
+        'fraction_unsupported',
+      );
+    });
+  }
+
+  it('does not remap the same expression under number mode', () => {
+    const math = getMathService();
+    const { resultType } = math.evaluateExpression('sqrt(2)', mockCtx());
+    expect(resultType).toBe('number');
+  });
+
+  it('keeps a genuine parse error as parse_failed under Fraction mode', () => {
+    const math = getMathService();
+    expectMcpError(
+      () => math.evaluateExpression('2 +* 3', mockCtx(), undefined, undefined, 'Fraction'),
+      JsonRpcErrorCode.ValidationError,
+      'parse_failed',
+    );
+  });
+
+  it('still resolves an exactly-rational Fraction expression', () => {
+    const math = getMathService();
+    const { result, resultType } = math.evaluateExpression(
+      '1/3 + 1/6',
+      mockCtx(),
+      undefined,
+      undefined,
+      'Fraction',
+    );
+    expect(resultType).toBe('Fraction');
+    expect(result).toBe('1/2');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// length / len aliases for count (#20)
+// ---------------------------------------------------------------------------
+
+describe('length/len aliases resolve to count (#20)', () => {
+  it('counts array elements via length', () => {
+    const math = getMathService();
+    expect(math.evaluateExpression('length([1, 2, 3])', mockCtx()).result).toBe('3');
+  });
+
+  it('counts string characters via len', () => {
+    const math = getMathService();
+    expect(math.evaluateExpression('len("abc")', mockCtx()).result).toBe('3');
+  });
+
+  it('counts matrix elements via length', () => {
+    const math = getMathService();
+    expect(math.evaluateExpression('length([1, 2; 3, 4])', mockCtx()).result).toBe('4');
+  });
+
+  it('resolves the alias under every numericType mode (per-instance import)', () => {
+    const math = getMathService();
+    for (const numericType of ['number', 'BigNumber', 'Fraction'] as const) {
+      const { result } = math.evaluateExpression(
+        'length([1, 2, 3])',
+        mockCtx(),
+        undefined,
+        undefined,
+        numericType,
+      );
+      expect(result).toBe('3');
+    }
   });
 });
 

@@ -172,6 +172,10 @@ describe('calculate tool', () => {
       ['nPr(5, 2)', '20', 'permutations'],
       ['choose(5, 2)', '10', 'combinations'],
       ['nCr(5, 2)', '10', 'combinations'],
+      // #20: length/len are agents' natural guess for element count → math.js count.
+      ['length([1, 2, 3])', '3', 'count'],
+      ['len("abc")', '3', 'count'],
+      ['length([1, 2; 3, 4])', '4', 'count'],
     ];
 
     for (const [expression, expected, canonical] of aliasCases) {
@@ -451,6 +455,18 @@ describe('calculate tool', () => {
       );
     });
 
+    it('fraction_unsupported', () => {
+      expectMcpError(
+        () =>
+          calculateTool.handler(
+            parse({ expression: 'sqrt(2)', numericType: 'Fraction' }),
+            mockCtx(),
+          ),
+        JsonRpcErrorCode.ValidationError,
+        'fraction_unsupported',
+      );
+    });
+
     it('parse_failed', () => {
       expectMcpError(
         () => calculateTool.handler(parse({ expression: '2 +* 3' }), mockCtx()),
@@ -534,6 +550,58 @@ describe('calculate tool', () => {
 
     it('rejects invalid numericType via Zod schema', () => {
       expect(() => parse({ expression: '2 + 2', numericType: 'double' })).toThrow();
+    });
+
+    // #19: an irrational/transcendental result under Fraction mode surfaces a
+    // dedicated fraction_unsupported error, not the misleading parse_failed.
+    it('maps a transcendental Fraction result (sin) to fraction_unsupported', () => {
+      expectMcpError(
+        () =>
+          calculateTool.handler(
+            parse({ expression: 'sin(1)', numericType: 'Fraction' }),
+            mockCtx(),
+          ),
+        JsonRpcErrorCode.ValidationError,
+        'fraction_unsupported',
+      );
+    });
+
+    it('maps an irrational Fraction result (sqrt) to fraction_unsupported with retry guidance', () => {
+      let caught: McpError | undefined;
+      try {
+        calculateTool.handler(parse({ expression: 'sqrt(2)', numericType: 'Fraction' }), mockCtx());
+      } catch (err) {
+        caught = err as McpError;
+      }
+      expect(caught?.data?.reason).toBe('fraction_unsupported');
+      expect(caught?.message).toContain('number');
+      expect(caught?.message).toContain('BigNumber');
+      // The internal math.js workaround must not be surfaced to the caller.
+      expect(caught?.message).not.toContain('fraction(x)');
+    });
+
+    it('keeps a genuine parse error as parse_failed under Fraction mode', () => {
+      expectMcpError(
+        () =>
+          calculateTool.handler(
+            parse({ expression: '2 +* 3', numericType: 'Fraction' }),
+            mockCtx(),
+          ),
+        JsonRpcErrorCode.ValidationError,
+        'parse_failed',
+      );
+    });
+
+    it('still resolves an exactly-rational Fraction expression', async () => {
+      const result = await call({ expression: '1/3 + 1/6', numericType: 'Fraction' });
+      expect(result.resultType).toBe('Fraction');
+      expect(result.result).toBe('1/2');
+    });
+
+    it('does not remap sqrt(2) under number mode (only Fraction triggers the remap)', async () => {
+      const result = await call({ expression: 'sqrt(2)', numericType: 'number', precision: 6 });
+      expect(result.resultType).toBe('number');
+      expect(result.result).toMatch(/^1\.41421/);
     });
 
     it('security guards remain active on BigNumber instance', () => {
