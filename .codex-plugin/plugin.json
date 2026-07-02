@@ -1,6 +1,6 @@
 {
   "name": "calculator-mcp-server",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "description": "Evaluate, simplify, and differentiate mathematical expressions via MCP.",
   "author": {
     "name": "cyanheads",

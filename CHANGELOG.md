@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.4.0](changelog/0.4.x/0.4.0.md) — 2026-07-02 · 🛡️ Security
+
+Security: simplify/derivative now run on the hardened math.js instance (closing a constant-folding bypass), a dedicated fraction_unsupported error for Fraction-mode irrational results, length/len aliases for count, and a lockfile refresh clearing all 9 transitive audit advisories.
+
 ## [0.3.5](changelog/0.3.x/0.3.5.md) — 2026-06-20
 
 Adopt mcp-ts-core ^0.10.9: two new devcheck guards (floating dependency specifiers, plugin marketplace manifest correctness), re-synced skills and tooling scripts.

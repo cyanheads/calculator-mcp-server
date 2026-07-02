@@ -1,6 +1,6 @@
 # calculator-mcp-server - Directory Structure
 
-Generated on: 2026-06-20 10:52:54
+Generated on: 2026-07-02 12:27:33
 
 ```text
 calculator-mcp-server/
@@ -24,6 +24,7 @@ calculator-mcp-server/
 │   ├── 0.1.x/
 │   ├── 0.2.x/
 │   ├── 0.3.x/
+│   ├── 0.4.x/
 │   └── template.md
 ├── claude-plans/
 ├── docs/
