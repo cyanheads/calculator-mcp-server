@@ -10,6 +10,7 @@ export const helpResource = resource('calculator://help', {
   name: 'Calculator Help',
   description: 'Available functions, operators, constants, and syntax reference.',
   mimeType: 'text/markdown',
+  cacheHint: { ttlMs: 86_400_000, cacheScope: 'public' },
   // Override the auto-derived view-source URL — `calculator://help` doesn't
   // kebab-mirror to `help.resource.ts`. See cyanheads/mcp-ts-core#42.
   sourceUrl:

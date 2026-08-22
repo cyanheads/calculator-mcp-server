@@ -39,6 +39,12 @@ beforeAll(() => {
 });
 
 describe('calculate tool', () => {
+  describe('input contract', () => {
+    it('rejects undeclared root fields', () => {
+      expect(() => parse({ expression: '2 + 2', unexpected: true })).toThrow('Unrecognized key');
+    });
+  });
+
   describe('evaluate (default)', () => {
     it('evaluates basic arithmetic', async () => {
       const result = await call({ expression: '2 + 3 * 4' });
@@ -627,7 +633,10 @@ describe('calculate tool', () => {
         operation: 'simplify',
         unchanged: false,
       });
-      expect(formatted?.[0].text).toContain('unchanged: false');
+      expect(formatted?.[0]).toMatchObject({
+        type: 'text',
+        text: expect.stringContaining('unchanged: false'),
+      });
     });
 
     it('renders "unchanged" status when unchanged is true', () => {
@@ -638,7 +647,10 @@ describe('calculate tool', () => {
         operation: 'simplify',
         unchanged: true,
       });
-      expect(formatted?.[0].text).toContain('could not be reduced further');
+      expect(formatted?.[0]).toMatchObject({
+        type: 'text',
+        text: expect.stringContaining('could not be reduced further'),
+      });
     });
 
     it('omits scope/precision lines for simplify', () => {
@@ -649,8 +661,14 @@ describe('calculate tool', () => {
         operation: 'simplify',
         unchanged: false,
       });
-      expect(formatted?.[0].text).not.toContain('Scope variables');
-      expect(formatted?.[0].text).not.toContain('Precision');
+      expect(formatted?.[0]).toMatchObject({
+        type: 'text',
+        text: expect.not.stringContaining('Scope variables'),
+      });
+      expect(formatted?.[0]).toMatchObject({
+        type: 'text',
+        text: expect.not.stringContaining('Precision'),
+      });
     });
   });
 });

@@ -7,7 +7,7 @@
       "tsc-alias",
       "@cyanheads/mcp-ts-core",
       "depcheck",
-      "tsx",
+      "@socketsecurity/bun-security-scanner",
       "bun",
       "clipboardy",
       "execa",
@@ -20,7 +20,7 @@
     ]
   },
   "outdated": {
-    "allowlist": ["@cyanheads/mcp-ts-core"]
+    "allowlist": []
   },
   "packaging": {
     "pluginManifests": true
