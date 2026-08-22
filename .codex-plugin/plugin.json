@@ -1,7 +1,7 @@
 {
   "name": "calculator-mcp-server",
-  "version": "0.4.0",
-  "description": "Evaluate, simplify, and differentiate mathematical expressions via MCP.",
+  "version": "0.4.1",
+  "description": "Evaluate, simplify, and differentiate mathematical expressions via MCP. STDIO or Streamable HTTP.",
   "author": {
     "name": "cyanheads",
     "email": "casey@caseyjhand.com",
@@ -14,7 +14,7 @@
   "mcpServers": "./.codex-plugin/mcp.json",
   "interface": {
     "displayName": "calculator-mcp-server",
-    "shortDescription": "Evaluate, simplify, and differentiate mathematical expressions via MCP.",
+    "shortDescription": "Evaluate, simplify, and differentiate mathematical expressions via MCP. STDIO or Streamable HTTP.",
     "longDescription": "A hardened math.js calculator MCP server that lets any LLM verify mathematical computations. Supports arithmetic, algebra, trigonometry, logarithms, statistics, matrices, complex numbers, combinatorics, and unit conversion. No auth required — all operations are read-only and stateless.",
     "developerName": "cyanheads",
     "category": "tools",

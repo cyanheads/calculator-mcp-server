@@ -1,9 +1,13 @@
 {
   "manifest_version": "0.3",
   "name": "calculator-mcp-server",
-  "version": "0.4.0",
-  "description": "Evaluate, simplify, and differentiate mathematical expressions via MCP.",
-  "author": { "name": "cyanheads" },
+  "version": "0.4.1",
+  "description": "Evaluate, simplify, and differentiate mathematical expressions via MCP. STDIO or Streamable HTTP.",
+  "author": {
+    "name": "cyanheads",
+    "email": "casey@caseyjhand.com",
+    "url": "https://caseyjhand.com"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/cyanheads/calculator-mcp-server"

@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.4.1](changelog/0.4.x/0.4.1.md) — 2026-08-22
+
+MCP SDK v2 compatibility with strict tool inputs, declared error envelopes, 2026 protocol support, and a 24-hour public cache hint for calculator help.
+
 ## [0.4.0](changelog/0.4.x/0.4.0.md) — 2026-07-02 · 🛡️ Security
 
 Security: simplify/derivative now run on the hardened math.js instance (closing a constant-folding bypass), a dedicated fraction_unsupported error for Fraction-mode irrational results, length/len aliases for count, and a lockfile refresh clearing all 9 transitive audit advisories.
