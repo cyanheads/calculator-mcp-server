@@ -4,8 +4,6 @@ Thanks for using `calculator-mcp-server`. Bugs, feature requests, and documentat
 
 Open a [bug report](https://github.com/cyanheads/calculator-mcp-server/issues/new?template=bug_report.yml) or [feature request](https://github.com/cyanheads/calculator-mcp-server/issues/new?template=feature_request.yml). Both forms are structured, and filling in the fields is what makes an issue actionable.
 
-Pull requests are welcome. Open an issue first for anything larger than a typo so the direction can be agreed before implementation.
-
 ## Server bug or framework bug?
 
 `calculator-mcp-server` is built on [@cyanheads/mcp-ts-core](https://github.com/cyanheads/mcp-ts-core), which handles transports, auth, config, logging, and telemetry. Sorting out which layer broke saves everyone a round-trip:
@@ -36,8 +34,8 @@ Do the triage first — an unverified report costs more to read than it saves to
 
 Two workflows ship with this project:
 
-- [`skills/report-issue-local/SKILL.md`](../skills/report-issue-local/SKILL.md) — filing against this repo.
-- [`skills/report-issue-framework/SKILL.md`](../skills/report-issue-framework/SKILL.md) — filing against `mcp-ts-core` when you've isolated the bug to the framework.
+- [`framework-skills/report-issue-local/SKILL.md`](../framework-skills/report-issue-local/SKILL.md) — filing against this repo.
+- [`framework-skills/report-issue-framework/SKILL.md`](../framework-skills/report-issue-framework/SKILL.md) — filing against `mcp-ts-core` when you've isolated the bug to the framework.
 
 Read the relevant one before filing on a user's behalf.
 
