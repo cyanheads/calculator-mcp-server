@@ -29,7 +29,7 @@
 
 ## Overview
 
-An MCP calculator powered by math.js. Verify numeric results, simplify algebraic expressions, and compute symbolic derivatives through one tool. Runs as a stdio process, a local Streamable HTTP server, or the public hosted endpoint above.
+Calculator powered by math.js. Verify numeric results, simplify algebraic expressions, and compute symbolic derivatives through one tool. Runs as a stdio process, a local Streamable HTTP server, or the public hosted endpoint above.
 
 ### Tools
 
@@ -70,7 +70,7 @@ Calculator-specific:
 
 - Hardened math.js v15 instance — dangerous functions disabled, evaluation sandboxed via `vm.runInNewContext()` with timeout
 - No auth required — all operations are read-only and stateless
-- Input validation: expression length limits, numeric-only scope values, and rejection of multiple statements; matrix row separators and string contents remain valid
+- Input validation: expression length limits and rejection of multiple statements; matrix row separators and string contents remain valid
 - Result validation: blocked result types (functions, parsers, result sets), configurable max result size
 - Scope sanitization: numeric-only values, prototype pollution prevention (blocked `__proto__`, `constructor`, etc.)
 
