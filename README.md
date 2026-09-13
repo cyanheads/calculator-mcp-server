@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.4.2-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/calculator-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-2.0.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/calculator-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/calculator-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-1.4.0-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.4.2-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/calculator-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.0.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/calculator-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/calculator-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.0-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -33,13 +33,13 @@ An MCP calculator powered by math.js. Verify numeric results, simplify algebraic
 
 ### Tools
 
-| Tool Name | Description |
+| Tool | Description |
 |:----------|:------------|
 | `calculate` | Evaluate math expressions, simplify algebraic expressions, or compute symbolic derivatives. |
 
 ### Resources
 
-| URI Pattern | Description |
+| Resource | Description |
 |:------------|:------------|
 | `calculator://help` | Available functions, operators, constants, and syntax reference. |
 
@@ -60,8 +60,7 @@ An MCP calculator powered by math.js. Verify numeric results, simplify algebraic
 
 - Markdown reference for functions, operators, constants, units, and expression syntax; no parameters.
 - Examples cover scope, matrices, complex numbers, precision, and all three operations.
-
----
+- Cacheable for 24 hours with public scope (`cacheHint`) — static content that never changes at runtime.
 
 ## Features
 
@@ -77,10 +76,9 @@ Calculator-specific:
 
 Agent-friendly output:
 
-- Calculation results and recovery hints appear in both structured JSON and readable text.
-- Output echoes the expression and operation; numeric evaluations identify supplied scope variables and applied precision, while simplification reports whether it made progress.
-
----
+- Effective-call echo — every response echoes the expression and operation, plus which scope variables and what precision were applied, so agents can verify what was actually computed
+- Discriminated output contracts — `unchanged: true` on `simplify` flags a no-op result instead of silently returning the same expression
+- Typed error reasons — validation and evaluation failures carry a typed `reason` (e.g. `fraction_unsupported`, `evaluation_timeout`, `disallowed_result_type`) plus an actionable recovery hint, rather than a raw exception
 
 ## Getting started
 
@@ -109,7 +107,11 @@ Add one of the following to your MCP client configuration file:
     "calculator-mcp-server": {
       "type": "stdio",
       "command": "bunx",
-      "args": ["@cyanheads/calculator-mcp-server@latest"]
+      "args": ["@cyanheads/calculator-mcp-server@latest"],
+      "env": {
+        "MCP_TRANSPORT_TYPE": "stdio",
+        "MCP_LOG_LEVEL": "info"
+      }
     }
   }
 }
@@ -123,7 +125,11 @@ Or with npx (no Bun required):
     "calculator-mcp-server": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@cyanheads/calculator-mcp-server@latest"]
+      "args": ["-y", "@cyanheads/calculator-mcp-server@latest"],
+      "env": {
+        "MCP_TRANSPORT_TYPE": "stdio",
+        "MCP_LOG_LEVEL": "info"
+      }
     }
   }
 }
@@ -178,8 +184,6 @@ cd calculator-mcp-server
 bun install
 ```
 
----
-
 ## Configuration
 
 | Variable | Description | Default |
@@ -197,8 +201,6 @@ bun install
 | `MCP_LOG_LEVEL` | Log level (RFC 5424). | `info` |
 
 See [`.env.example`](./.env.example) for optional session, resumability, logging, and telemetry settings.
-
----
 
 ## Running the server
 
@@ -225,8 +227,6 @@ docker run -p 3010:3010 calculator-mcp-server
 
 The image defaults to Streamable HTTP on port `3010`, stateless sessions, and logs at `/var/log/calculator-mcp-server`. OpenTelemetry dependencies are installed by default; build with `--build-arg OTEL_ENABLED=false` to omit them.
 
----
-
 ## Project structure
 
 | Directory | Purpose |
@@ -238,8 +238,6 @@ The image defaults to Streamable HTTP on port `3010`, stateless sessions, and lo
 | `docs/` | Generated directory tree. |
 | `tests/` | Calculation, configuration, and response-contract tests. |
 
----
-
 ## Development guide
 
 See [`AGENTS.md`](./AGENTS.md) or [`CLAUDE.md`](./CLAUDE.md) for development guidelines and architectural rules. The short version:
@@ -247,8 +245,6 @@ See [`AGENTS.md`](./AGENTS.md) or [`CLAUDE.md`](./CLAUDE.md) for development gui
 - Handlers throw, framework catches — no `try/catch` in tool logic
 - Use `ctx.log` for logging
 - Register new tools and resources in `src/index.ts`
-
----
 
 ## Contributing
 
@@ -258,8 +254,6 @@ Issues are welcome. Run checks before submitting:
 bun run devcheck
 bun run test
 ```
-
----
 
 ## License
 
