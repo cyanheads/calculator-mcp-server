@@ -1,19 +1,49 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "calculator-mcp-server",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Evaluate, simplify, and differentiate mathematical expressions via MCP. STDIO or Streamable HTTP.",
   "author": {
-    "name": "cyanheads"
+    "name": "Casey Hand",
+    "email": "casey@caseyjhand.com",
+    "url": "https://caseyjhand.com"
   },
   "homepage": "https://github.com/cyanheads/calculator-mcp-server#readme",
   "repository": "https://github.com/cyanheads/calculator-mcp-server",
   "license": "Apache-2.0",
+  "keywords": ["mcp", "mcp-server", "model-context-protocol", "calculator", "math", "mathjs"],
+  "userConfig": {
+    "calc_max_expression_length": {
+      "type": "string",
+      "title": "Max Expression Length",
+      "description": "Maximum allowed expression string length.",
+      "required": false,
+      "default": ""
+    },
+    "calc_evaluation_timeout_ms": {
+      "type": "string",
+      "title": "Evaluation Timeout (ms)",
+      "description": "Maximum evaluation time in milliseconds.",
+      "required": false,
+      "default": ""
+    },
+    "calc_max_result_length": {
+      "type": "string",
+      "title": "Max Result Length",
+      "description": "Maximum result string length in characters.",
+      "required": false,
+      "default": ""
+    }
+  },
   "mcpServers": {
     "calculator-mcp-server": {
       "command": "npx",
       "args": ["-y", "@cyanheads/calculator-mcp-server"],
       "env": {
-        "MCP_TRANSPORT_TYPE": "stdio"
+        "MCP_TRANSPORT_TYPE": "stdio",
+        "CALC_MAX_EXPRESSION_LENGTH": "${user_config.calc_max_expression_length}",
+        "CALC_EVALUATION_TIMEOUT_MS": "${user_config.calc_evaluation_timeout_ms}",
+        "CALC_MAX_RESULT_LENGTH": "${user_config.calc_max_result_length}"
       }
     }
   }

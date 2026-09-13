@@ -1,6 +1,6 @@
 # calculator-mcp-server - Directory Structure
 
-Generated on: 2026-08-22 13:40:02
+Generated on: 2026-09-13 17:48:11
 
 ```text
 calculator-mcp-server/
@@ -29,27 +29,7 @@ calculator-mcp-server/
 │   └── template.md
 ├── claude-plans/
 ├── docs/
-├── scripts/
-│   ├── build-changelog.ts
-│   ├── build.ts
-│   ├── check-dependency-specifiers.ts
-│   ├── check-docs-sync.ts
-│   ├── check-framework-antipatterns.ts
-│   ├── check-skill-versions.ts
-│   ├── check-skills-sync.ts
-│   ├── clean-mcpb.ts
-│   ├── clean.ts
-│   ├── devcheck.ts
-│   ├── devdocs.ts
-│   ├── fetch-openapi-spec.ts
-│   ├── lint-mcp.ts
-│   ├── lint-packaging.ts
-│   ├── list-skills.ts
-│   ├── release-github.ts
-│   ├── split-changelog.ts
-│   ├── tree.ts
-│   └── update-coverage.ts
-├── skills/
+├── framework-skills/
 │   ├── add-app-tool/
 │   │   └── SKILL.md
 │   ├── add-prompt/
@@ -120,6 +100,8 @@ calculator-mcp-server/
 │   │   └── SKILL.md
 │   ├── release-and-publish/
 │   │   └── SKILL.md
+│   ├── release-pr-review/
+│   │   └── SKILL.md
 │   ├── report-issue-framework/
 │   │   └── SKILL.md
 │   ├── report-issue-local/
@@ -134,6 +116,26 @@ calculator-mcp-server/
 │   │   └── SKILL.md
 │   └── tool-defs-analysis/
 │       └── SKILL.md
+├── scripts/
+│   ├── build-changelog.ts
+│   ├── build.ts
+│   ├── check-dependency-specifiers.ts
+│   ├── check-docs-sync.ts
+│   ├── check-framework-antipatterns.ts
+│   ├── check-skill-versions.ts
+│   ├── check-skills-sync.ts
+│   ├── clean-mcpb.ts
+│   ├── clean.ts
+│   ├── devcheck.ts
+│   ├── devdocs.ts
+│   ├── fetch-openapi-spec.ts
+│   ├── lint-mcp.ts
+│   ├── lint-packaging.ts
+│   ├── list-skills.ts
+│   ├── release-github.ts
+│   ├── split-changelog.ts
+│   ├── tree.ts
+│   └── update-coverage.ts
 ├── src/
 │   ├── config/
 │   │   └── server-config.ts
@@ -150,12 +152,15 @@ calculator-mcp-server/
 │   │       └── types.ts
 │   └── index.ts
 ├── tests/
+│   ├── config/
+│   │   └── server-config.test.ts
 │   ├── mcp-server/
 │   │   ├── resources/
 │   │   │   └── definitions/
 │   │   │       └── help.resource.test.ts
 │   │   └── tools/
 │   │       └── definitions/
+│   │           ├── calculate.contract.test.ts
 │   │           └── calculate.tool.test.ts
 │   └── services/
 │       └── math/

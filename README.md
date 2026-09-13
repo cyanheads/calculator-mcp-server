@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.4.1-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/calculator-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-2.0.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/calculator-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/calculator-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-1.4.0-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.4.2-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/calculator-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-2.0.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/calculator-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/calculator-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-1.4.0-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -27,55 +27,62 @@
 
 ---
 
-## Tools
+## Overview
 
-One tool for all mathematical operations:
+An MCP calculator powered by math.js. Verify numeric results, simplify algebraic expressions, and compute symbolic derivatives through one tool. Runs as a stdio process, a local Streamable HTTP server, or the public hosted endpoint above.
+
+### Tools
 
 | Tool Name | Description |
 |:----------|:------------|
 | `calculate` | Evaluate math expressions, simplify algebraic expressions, or compute symbolic derivatives. |
 
-### `calculate`
-
-A single tool covering 100% of the server's purpose. The `operation` parameter defaults to `evaluate`, so the common case is just `{ expression: "..." }`.
-
-- **Evaluate** — arithmetic, trigonometry, logarithms, statistics, matrices, complex numbers, unit conversion, combinatorics
-- **Simplify** — reduce algebraic expressions symbolically (e.g., `2x + 3x` -> `5 * x`). Supports algebraic and trigonometric identities
-- **Derivative** — compute symbolic derivatives (e.g., `3x^2 + 2x + 1` -> `6 * x + 2`)
-- Variable scope via `scope` parameter: `{ "x": 5, "y": 3 }`
-- Configurable precision for numeric results
-- Blank optional `variable` and `precision` values from form-based MCP clients are treated as omitted
-
----
-
-## Resources
+### Resources
 
 | URI Pattern | Description |
 |:------------|:------------|
 | `calculator://help` | Available functions, operators, constants, and syntax reference. |
 
+## Capability reference
+
+### `calculate` <sub>tool</sub>
+
+- One `expression` per call. `operation` selects `evaluate` (default), `simplify`, or `derivative`; derivatives require `variable` (e.g. `"x"`).
+- Evaluate arithmetic, trigonometry, logarithms, statistics, matrices, complex numbers, units, and combinatorics; assign numeric variables through `scope`, e.g. `{ "x": 5 }`.
+- `numericType` selects `number`, `BigNumber`, or `Fraction`. Fractions require exact rational results; irrational or transcendental results return `fraction_unsupported` with guidance to change numeric type.
+- `precision` sets 1–16 significant digits for numeric results. Blank optional `variable` and `precision` values are treated as omitted; scope and precision do not affect symbolic operations.
+- Simplification includes algebraic and trigonometric identities (`2x + 3x` → `5 * x`); `unchanged: true` identifies expressions the simplifier cannot reduce, including polynomial factoring and rational cancellation cases.
+- Returns the result string, result type, original expression, and operation. Validation failures include typed reasons and recovery hints.
+
+---
+
+### `calculator://help` <sub>resource</sub>
+
+- Markdown reference for functions, operators, constants, units, and expression syntax; no parameters.
+- Examples cover scope, matrices, complex numbers, precision, and all three operations.
+
 ---
 
 ## Features
 
-Built on [`@cyanheads/mcp-ts-core`](https://github.com/cyanheads/mcp-ts-core):
-
-- Declarative tool definitions — single file per tool, framework handles registration and validation
-- Unified error handling across all tools
-- Structured logging with optional OpenTelemetry tracing
-- Runs locally (stdio/HTTP) or in Docker
+Built on [`@cyanheads/mcp-ts-core`](https://github.com/cyanheads/mcp-ts-core): stdio and Streamable HTTP transports, pluggable auth (`none` / `jwt` / `oauth`), swappable storage (`in-memory`, `filesystem`, `Supabase`, `Cloudflare KV/R2/D1`), structured logging with optional OpenTelemetry tracing.
 
 Calculator-specific:
 
 - Hardened math.js v15 instance — dangerous functions disabled, evaluation sandboxed via `vm.runInNewContext()` with timeout
 - No auth required — all operations are read-only and stateless
-- Input validation: expression length limits, expression separator rejection (semicolons and newlines), numeric-only scope values
+- Input validation: expression length limits, numeric-only scope values, and rejection of multiple statements; matrix row separators and string contents remain valid
 - Result validation: blocked result types (functions, parsers, result sets), configurable max result size
 - Scope sanitization: numeric-only values, prototype pollution prevention (blocked `__proto__`, `constructor`, etc.)
 
+Agent-friendly output:
+
+- Calculation results and recovery hints appear in both structured JSON and readable text.
+- Output echoes the expression and operation; numeric evaluations identify supplied scope variables and applied precision, while simplification reports whether it made progress.
+
 ---
 
-## Getting Started
+## Getting started
 
 ### Public Hosted Instance
 
@@ -140,23 +147,33 @@ Or with Docker:
 }
 ```
 
+For Streamable HTTP, set the transport and start the built server:
+
+```sh
+MCP_SESSION_MODE=stateless MCP_HTTP_PORT=3010 bun run start:http
+# Server listens at http://localhost:3010/mcp
+```
+
 ### Prerequisites
 
-- [Bun v1.3.0](https://bun.sh/) or higher
+- [Bun v1.4.0](https://bun.sh/) or higher
 
 ### Installation
 
 1. **Clone the repository:**
+
 ```sh
 git clone https://github.com/cyanheads/calculator-mcp-server.git
 ```
 
 2. **Navigate into the directory:**
+
 ```sh
 cd calculator-mcp-server
 ```
 
 3. **Install dependencies:**
+
 ```sh
 bun install
 ```
@@ -176,15 +193,16 @@ bun install
 | `MCP_HTTP_ENDPOINT_PATH` | Path for the HTTP MCP endpoint. | `/mcp` |
 | `MCP_HTTP_MAX_BODY_BYTES` | Maximum inbound HTTP request size; `0` disables the limit. | `1048576` |
 | `MCP_AUTH_MODE` | Auth mode: `none`, `jwt`, or `oauth`. | `none` |
+| `MCP_SESSION_MODE` | `auto`, `stateful`, or `stateless`. Supplied configuration pins `stateless`; the framework default `auto` resolves to `stateful`. | `stateless` in supplied configuration |
 | `MCP_LOG_LEVEL` | Log level (RFC 5424). | `info` |
 
 See [`.env.example`](./.env.example) for optional session, resumability, logging, and telemetry settings.
 
 ---
 
-## Running the Server
+## Running the server
 
-### Local Development
+### Local development
 
 - **Build and run the production version:**
   ```sh
@@ -205,11 +223,11 @@ docker build -t calculator-mcp-server .
 docker run -p 3010:3010 calculator-mcp-server
 ```
 
-The image defaults to Streamable HTTP on port `3010`, stateless sessions, and logs at `/var/log/calculator-mcp-server`.
+The image defaults to Streamable HTTP on port `3010`, stateless sessions, and logs at `/var/log/calculator-mcp-server`. OpenTelemetry dependencies are installed by default; build with `--build-arg OTEL_ENABLED=false` to omit them.
 
 ---
 
-## Project Structure
+## Project structure
 
 | Directory | Purpose |
 |:----------|:--------|
@@ -218,10 +236,11 @@ The image defaults to Streamable HTTP on port `3010`, stateless sessions, and lo
 | `src/services/` | Domain service integrations (MathService). |
 | `src/config/` | Environment variable parsing and validation with Zod. |
 | `docs/` | Generated directory tree. |
+| `tests/` | Calculation, configuration, and response-contract tests. |
 
 ---
 
-## Development Guide
+## Development guide
 
 See [`AGENTS.md`](./AGENTS.md) or [`CLAUDE.md`](./CLAUDE.md) for development guidelines and architectural rules. The short version:
 
@@ -233,7 +252,7 @@ See [`AGENTS.md`](./AGENTS.md) or [`CLAUDE.md`](./CLAUDE.md) for development gui
 
 ## Contributing
 
-Issues and pull requests are welcome. Run checks before submitting:
+Issues are welcome. Run checks before submitting:
 
 ```sh
 bun run devcheck

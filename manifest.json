@@ -1,7 +1,7 @@
 {
   "manifest_version": "0.3",
   "name": "calculator-mcp-server",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Evaluate, simplify, and differentiate mathematical expressions via MCP. STDIO or Streamable HTTP.",
   "author": {
     "name": "cyanheads",
@@ -41,21 +41,21 @@
       "title": "Max Expression Length",
       "description": "Maximum allowed expression string length.",
       "required": false,
-      "default": "1000"
+      "default": ""
     },
     "calc_evaluation_timeout_ms": {
       "type": "string",
       "title": "Evaluation Timeout (ms)",
       "description": "Maximum evaluation time in milliseconds.",
       "required": false,
-      "default": "5000"
+      "default": ""
     },
     "calc_max_result_length": {
       "type": "string",
       "title": "Max Result Length",
       "description": "Maximum result string length in characters.",
       "required": false,
-      "default": "100000"
+      "default": ""
     }
   }
 }
