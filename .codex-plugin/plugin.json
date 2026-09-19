@@ -1,6 +1,6 @@
 {
   "name": "calculator-mcp-server",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Evaluate, simplify, and differentiate mathematical expressions via MCP. STDIO or Streamable HTTP.",
   "author": {
     "name": "Casey Hand",

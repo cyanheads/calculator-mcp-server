@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.4.3](changelog/0.4.x/0.4.3.md) — 2026-09-19
+
+MCP_SESSION_MODE is now declared stateless in code, argument rejections carry a reason and recovery hint, and calculate's own errors close with a reason suffix — all from the @cyanheads/mcp-ts-core 0.13.6 upgrade.
+
 ## [0.4.2](changelog/0.4.x/0.4.2.md) — 2026-09-13
 
 Framework adoption and calculator configuration
