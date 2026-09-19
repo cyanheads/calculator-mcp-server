@@ -156,7 +156,7 @@ Or with Docker:
 For Streamable HTTP, set the transport and start the built server:
 
 ```sh
-MCP_SESSION_MODE=stateless MCP_HTTP_PORT=3010 bun run start:http
+MCP_HTTP_PORT=3010 bun run start:http
 # Server listens at http://localhost:3010/mcp
 ```
 
@@ -192,12 +192,12 @@ bun install
 | `CALC_EVALUATION_TIMEOUT_MS` | Maximum evaluation time in milliseconds (100–30,000). | `5000` |
 | `CALC_MAX_RESULT_LENGTH` | Maximum result string length in characters (1,000–1,000,000). | `100000` |
 | `MCP_TRANSPORT_TYPE` | Transport: `stdio` or `http`. | `stdio` |
-| `MCP_HTTP_HOST` | Hostname for the HTTP server. | `localhost` |
+| `MCP_HTTP_HOST` | Hostname for the HTTP server. | `127.0.0.1` |
 | `MCP_HTTP_PORT` | Port for HTTP server. | `3010` |
 | `MCP_HTTP_ENDPOINT_PATH` | Path for the HTTP MCP endpoint. | `/mcp` |
 | `MCP_HTTP_MAX_BODY_BYTES` | Maximum inbound HTTP request size; `0` disables the limit. | `1048576` |
 | `MCP_AUTH_MODE` | Auth mode: `none`, `jwt`, or `oauth`. | `none` |
-| `MCP_SESSION_MODE` | `auto`, `stateful`, or `stateless`. Supplied configuration pins `stateless`; the framework default `auto` resolves to `stateful`. | `stateless` in supplied configuration |
+| `MCP_SESSION_MODE` | `auto`, `stateful`, or `stateless`. The server declares `stateless` in code, so every launch path resolves the same way; setting this overrides that declaration. | `stateless` |
 | `MCP_LOG_LEVEL` | Log level (RFC 5424). | `info` |
 
 See [`.env.example`](./.env.example) for optional session, resumability, logging, and telemetry settings.

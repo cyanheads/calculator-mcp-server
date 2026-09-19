@@ -15,6 +15,11 @@ await createApp({
   title: 'calculator-mcp-server',
   tools: [calculateTool],
   resources: [helpResource],
+  /**
+   * No tool gates on `ctx.requestInput`, and nothing is held between calls, so
+   * the session store earns nothing here. `MCP_SESSION_MODE` still overrides.
+   */
+  sessionMode: 'stateless',
   instructions:
     'Use `calculate` to verify math computations via math.js. `operation` selects `evaluate` (default, numeric), `simplify` (symbolic, with trig identities), or `derivative` (symbolic, requires `variable`). Covers arithmetic, trigonometry, logarithms, statistics, matrices, complex numbers, combinatorics, and unit conversion (e.g. `5 kg to lbs`). Pass variable values via `scope` (e.g. `{ "x": 5 }`) and bound numeric output with `precision` (1–16). One expression per call.',
   landing: {
