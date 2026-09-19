@@ -85,7 +85,7 @@
     "access": "public"
   },
   "overrides": {
-    "zod": "^4.6.1"
+    "zod": "^4.6.5"
   },
   "dependencies": {
     "@cyanheads/mcp-ts-core": "^0.13.6",
