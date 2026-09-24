@@ -21,7 +21,7 @@ await createApp({
    */
   sessionMode: 'stateless',
   instructions:
-    'Use `calculate` to verify math computations via math.js. `operation` selects `evaluate` (default, numeric), `simplify` (symbolic, with trig identities), or `derivative` (symbolic, requires `variable`). Covers arithmetic, trigonometry, logarithms, statistics, matrices, complex numbers, combinatorics, and unit conversion (e.g. `5 kg to lbs`). Pass variable values via `scope` (e.g. `{ "x": 5 }`) and bound numeric output with `precision` (1–16). One expression per call.',
+    'Use `calculate` to verify math computations via math.js. `operation` selects `evaluate` (default, numeric), `simplify` (symbolic, with trig identities), or `derivative` (symbolic, requires `variable`). Covers arithmetic, trigonometry, logarithms, statistics, matrices, complex numbers, combinatorics, and unit conversion (e.g. `5 kg to lbs`). For `evaluate`, pass variable values via `scope` (e.g. `{ "x": 5 }`) and bound numeric output with `precision` (1–16); symbolic operations ignore both. One expression per call.',
   landing: {
     repoRoot: 'https://github.com/cyanheads/calculator-mcp-server',
     tagline:

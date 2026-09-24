@@ -311,13 +311,26 @@ describe('calculate tool', () => {
     });
 
     it('rejects disabled functions in expressions', () => {
-      expect(() =>
-        calculateTool.handler(parse({ expression: 'evaluate("2+3")' }), mockCtx()),
-      ).toThrow('disabled');
+      expect(() => calculateTool.handler(parse({ expression: 'parse("2+3")' }), mockCtx())).toThrow(
+        'disabled',
+      );
     });
 
     it('rejects unknown functions', () => {
       expect(() => calculateTool.handler(parse({ expression: 'foo(5)' }), mockCtx())).toThrow();
+    });
+  });
+
+  describe('string literals and statements', () => {
+    it('keeps a notation alias inside a string literal (#24)', async () => {
+      const result = await call({ expression: 'concat("ln(", "x)")' });
+      expect(result.result).toBe('"ln(x)"');
+      expect(result.resultType).toBe('string');
+    });
+
+    it('treats a semicolon in a single-quoted string as data (#32)', async () => {
+      const result = await call({ expression: "concat('a;b', 'c')" });
+      expect(result.result).toBe('"a;bc"');
     });
   });
 
@@ -332,7 +345,7 @@ describe('calculate tool', () => {
       expect(formatted).toEqual([
         {
           type: 'text',
-          text: '**Expression:** `6 * 7`\n**Operation:** evaluate\n**Result:** 42\n**Type:** number\n**Scope variables:** none\n**Precision:** full',
+          text: '**Expression:** `6 * 7`\n**Operation:** evaluate\n**Result:** `42`\n**Type:** number\n**Scope variables:** none\n**Precision:** full',
         },
       ]);
     });
@@ -349,9 +362,94 @@ describe('calculate tool', () => {
       expect(formatted).toEqual([
         {
           type: 'text',
-          text: '**Expression:** `x^2 + y`\n**Operation:** evaluate\n**Result:** 11\n**Type:** number\n**Scope variables:** x, y\n**Precision:** 4',
+          text: '**Expression:** `x^2 + y`\n**Operation:** evaluate\n**Result:** `11`\n**Type:** number\n**Scope variables:** `x`, `y`\n**Precision:** 4',
         },
       ]);
+    });
+
+    /** The text block `format()` renders for an evaluate output with these fields. */
+    function rendered(fields: {
+      expression?: string;
+      result?: string;
+      scopeVars?: string[];
+      operation?: 'evaluate' | 'simplify' | 'derivative';
+    }): string {
+      const { format } = calculateTool;
+      if (!format) throw new Error('calculate defines no format()');
+      const [block] = format({
+        expression: '1',
+        result: '1',
+        resultType: 'string',
+        operation: 'evaluate',
+        ...fields,
+      });
+      return (block as { text: string }).text;
+    }
+
+    it.each([
+      ['"a`b"', '``"a`b"``'],
+      ['"a``b"', '```"a``b"```'],
+      ['"a```b"', '````"a```b"````'],
+      ['"a`b``c```d"', '````"a`b``c```d"````'],
+      ['`lead', '`` `lead ``'],
+      ['trail`', '`` trail` ``'],
+      ['``both``', '``` ``both`` ```'],
+      [' lead', '`  lead `'],
+      ['trail ', '` trail  `'],
+      ['"[click](https://example.com)"', '`"[click](https://example.com)"`'],
+      ['"<script>alert(1)</script>"', '`"<script>alert(1)</script>"`'],
+      ['["<b>x</b>", "[l](u)"]', '`["<b>x</b>", "[l](u)"]`'],
+      ['{"a": {"b": ["<i>", "*x*"]}}', '`{"a": {"b": ["<i>", "*x*"]}}`'],
+      ['5 * x_1^2', '`5 * x_1^2`'],
+    ])('renders the result %s as the code span %s', (result, span) => {
+      expect(rendered({ result })).toContain(`\n**Result:** ${span}\n`);
+    });
+
+    it('sizes the expression span the same way and keeps a backtick-free expression byte-identical', () => {
+      expect(rendered({ expression: '"a`b"' })).toMatch(/^\*\*Expression:\*\* ``"a`b"``\n/);
+      expect(rendered({ expression: '2 + 3 * 4' })).toMatch(/^\*\*Expression:\*\* `2 \+ 3 \* 4`\n/);
+    });
+
+    it('renders each scope-variable name as its own code span', () => {
+      expect(rendered({ scopeVars: ['<img src=x>', 'a`b', '[l](u)', 'x'] })).toContain(
+        '\n**Scope variables:** `<img src=x>`, ``a`b``, `[l](u)`, `x`\n',
+      );
+    });
+
+    it('renders an all-space name unpadded and an empty name as a marker', () => {
+      expect(rendered({ scopeVars: ['  ', ''] })).toContain(
+        '\n**Scope variables:** `  `, (empty)\n',
+      );
+    });
+
+    it('puts a multi-line result in a fenced block sized past its longest backtick run', () => {
+      const sparse = 'Sparse Matrix [2 x 2] density: 0.5\n\n    (0, 0) ==> 1\n    (1, 1) ==> 1';
+      expect(rendered({ result: sparse })).toContain(
+        `\n**Result:**\n\`\`\`\n${sparse}\n\`\`\`\n**Type:** string\n`,
+      );
+      expect(rendered({ result: 'a\n````\nb' })).toContain(
+        '\n**Result:**\n`````\na\n````\nb\n`````\n**Type:**',
+      );
+    });
+
+    it('puts a multi-line expression in a fenced block', () => {
+      expect(rendered({ expression: '"a\nb"' })).toMatch(
+        /^\*\*Expression:\*\*\n```\n"a\nb"\n```\n/,
+      );
+    });
+
+    it('puts a value holding a lone carriage return in a fenced block unchanged', () => {
+      // CommonMark reads the CR as a line ending; the fence keeps it from closing early.
+      expect(rendered({ expression: '"a\r```b"' })).toMatch(
+        /^\*\*Expression:\*\*\n````\n"a\r```b"\n````\n/,
+      );
+    });
+
+    it('omits the scope and precision lines for derivative', () => {
+      const text = rendered({ operation: 'derivative', result: '2 * x' });
+      expect(text).toBe(
+        '**Expression:** `1`\n**Operation:** derivative\n**Result:** `2 * x`\n**Type:** string',
+      );
     });
   });
 
@@ -481,6 +579,65 @@ describe('calculate tool', () => {
       );
     });
 
+    it('operation_as_function', () => {
+      expectMcpError(
+        () =>
+          calculateTool.handler(parse({ expression: 'derivative("0.2*x + 5", "x")' }), mockCtx()),
+        JsonRpcErrorCode.ValidationError,
+        'operation_as_function',
+      );
+    });
+
+    it('type_mismatch', () => {
+      expectMcpError(
+        () => calculateTool.handler(parse({ expression: '5 kg + 3' }), mockCtx()),
+        JsonRpcErrorCode.ValidationError,
+        'type_mismatch',
+      );
+    });
+
+    it('evaluation_failed', () => {
+      expectMcpError(
+        () => calculateTool.handler(parse({ expression: 'factorial(-1)' }), mockCtx()),
+        JsonRpcErrorCode.ValidationError,
+        'evaluation_failed',
+      );
+    });
+
+    it('undefined_result under BigNumber and Fraction', () => {
+      for (const numericType of ['BigNumber', 'Fraction']) {
+        expectMcpError(
+          () => calculateTool.handler(parse({ expression: '1 / 0', numericType }), mockCtx()),
+          JsonRpcErrorCode.ValidationError,
+          'undefined_result',
+        );
+      }
+    });
+
+    it('disallowed_result_type for help()', () => {
+      expectMcpError(
+        () => calculateTool.handler(parse({ expression: 'help("sin")' }), mockCtx()),
+        JsonRpcErrorCode.ValidationError,
+        'disallowed_result_type',
+      );
+    });
+
+    it('multiple_expressions after a single-quoted string', () => {
+      expectMcpError(
+        () => calculateTool.handler(parse({ expression: `'"' ; 1+1` }), mockCtx()),
+        JsonRpcErrorCode.ValidationError,
+        'multiple_expressions',
+      );
+    });
+
+    it('result_too_large from a size limit', () => {
+      expectMcpError(
+        () => calculateTool.handler(parse({ expression: 'range(1, 5e6)' }), mockCtx()),
+        JsonRpcErrorCode.ValidationError,
+        'result_too_large',
+      );
+    });
+
     it('derivative_missing_variable', () => {
       expectMcpError(
         () =>
@@ -491,14 +648,14 @@ describe('calculate tool', () => {
     });
 
     it('evaluation_timeout', () => {
-      // Tight timeout (1ms) + an expensive matrix op forces the vm to abort.
+      // A million-iteration map takes hundreds of milliseconds, far past a 1 ms timeout.
       const svc = new MathService({
         maxExpressionLength: 10_000,
         evaluationTimeoutMs: 1,
         maxResultLength: 1_000_000,
       });
       expectMcpError(
-        () => svc.evaluateExpression('eigs(zeros(50, 50))', mockCtx()),
+        () => svc.evaluateExpression('sum(map(range(1, 1e6), x^2))', mockCtx()),
         JsonRpcErrorCode.Timeout,
         'evaluation_timeout',
       );
@@ -615,7 +772,7 @@ describe('calculate tool', () => {
       expectMcpError(
         () =>
           calculateTool.handler(
-            parse({ expression: 'evaluate("2+3")', numericType: 'BigNumber' }),
+            parse({ expression: 'parse("2+3")', numericType: 'BigNumber' }),
             mockCtx(),
           ),
         JsonRpcErrorCode.ValidationError,
