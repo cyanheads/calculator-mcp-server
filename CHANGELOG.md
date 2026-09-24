@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.5.0](changelog/0.5.x/0.5.0.md) — 2026-09-24 · ⚠️ Breaking · 🛡️ Security
+
+calculate errors now name the stage that failed through three new reasons, non-finite and inexact-Fraction results fail instead of returning, Fraction mode accepts whole-number sizes, indexes, and dimensions, and each evaluation is bounded in the matrices and strings it can build.
+
 ## [0.4.3](changelog/0.4.x/0.4.3.md) — 2026-09-19
 
 MCP_SESSION_MODE is now declared stateless in code, argument rejections carry a reason and recovery hint, and calculate's own errors close with a reason suffix — all from the @cyanheads/mcp-ts-core 0.13.6 upgrade.
