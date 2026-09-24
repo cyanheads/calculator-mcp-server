@@ -49,7 +49,7 @@ Calculator powered by math.js. Verify numeric results, simplify algebraic expres
 
 - One `expression` per call. `operation` selects `evaluate` (default), `simplify`, or `derivative`; derivatives require `variable` (e.g. `"x"`).
 - Evaluate arithmetic, trigonometry, logarithms, statistics, matrices, complex numbers, units, and combinatorics; assign numeric variables through `scope`, e.g. `{ "x": 5 }`.
-- `numericType` selects `number`, `BigNumber`, or `Fraction`. Fractions require exact rational results; irrational or transcendental results return `fraction_unsupported` with guidance to change numeric type.
+- `numericType` selects `number`, `BigNumber` (64 significant digits, for values that overflow a 64-bit float), or `Fraction` (exact rationals). Fraction mode returns `fraction_unsupported`, with guidance to change numeric type, when a result has no exact rational value (`sqrt(2)`), the expression calls a function Fraction mode cannot compute (`sqrt(4)`, `5!`), or it uses a value Fraction mode holds only as a rounded float (`pi`, `2^(1/2)`).
 - `precision` sets 1–16 significant digits for numeric results. Blank optional `variable` and `precision` values are treated as omitted; scope and precision do not affect symbolic operations.
 - Simplification includes algebraic and trigonometric identities (`2x + 3x` → `5 * x`); `unchanged: true` identifies expressions the simplifier cannot reduce, including polynomial factoring and rational cancellation cases.
 - Returns the result string, result type, original expression, and operation. Validation failures include typed reasons and recovery hints.
@@ -68,10 +68,11 @@ Built on [`@cyanheads/mcp-ts-core`](https://github.com/cyanheads/mcp-ts-core): s
 
 Calculator-specific:
 
-- Hardened math.js v15 instance — dangerous functions disabled, evaluation sandboxed via `vm.runInNewContext()` with timeout
+- Hardened math.js v15 instance — dangerous functions disabled, evaluation run under a `vm` timeout
 - No auth required — all operations are read-only and stateless
 - Input validation: expression length limits and rejection of multiple statements; matrix row separators and string contents remain valid
 - Result validation: blocked result types (functions, parsers, result sets), configurable max result size
+- Size limits: functions that build a matrix or string from a size, product, broadcast, index, or precision argument are capped per call, and each evaluation has a total element budget; oversized requests fail fast with `result_too_large`
 - Scope sanitization: numeric-only values, prototype pollution prevention (blocked `__proto__`, `constructor`, etc.)
 
 Agent-friendly output:
