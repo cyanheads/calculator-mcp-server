@@ -633,13 +633,15 @@ function createMathInstance(number: 'number' | 'BigNumber' | 'Fraction'): MathIn
   //
   // Replacing config with a plain stub breaks both; the guard function below satisfies
   // both patterns while blocking write access (calls with a non-empty options object).
-  // A bare `config()` from an expression therefore returns the config object.
+  // A bare `config()` from an expression therefore returns the config object — a fresh
+  // copy each call, as stock math.js does: the instance outlives the request, and an
+  // expression can assign into a plain object it holds (`c.k = …` after `c = config()`).
   const configGuard = Object.assign(
     (options?: Record<string, unknown>) => {
       if (options !== undefined && Object.keys(options).length > 0) {
         throw new Error('"config" is disabled for security.');
       }
-      return currentConfig;
+      return { ...currentConfig };
     },
     currentConfig, // spread all config props (precision, relTol, …) onto the function object
   );

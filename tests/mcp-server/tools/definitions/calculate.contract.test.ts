@@ -305,6 +305,20 @@ describe('calculate response contract', () => {
     expect(scope).toEqual({ x: 1 });
   });
 
+  it('keeps an assignment into config() from reaching a later call on both surfaces', async () => {
+    const write = await runToolContract(calculateTool, {
+      expression: '[c = config(), c.leaked = 7][2]',
+    });
+    expect(write.structuredContent).toMatchObject({ result: '7' });
+    const read = await runToolContract(calculateTool, { expression: 'config()' });
+    expect(read.isError).not.toBe(true);
+    expect(read.structuredContent).toMatchObject({ resultType: 'Object' });
+    const { result } = read.structuredContent as { result: string };
+    expect(result).toContain('"relTol": 1e-12');
+    expect(result).not.toContain('leaked');
+    expect(textOf(read)).not.toContain('leaked');
+  });
+
   describe('declared failure reasons on the wire', () => {
     it.each([
       {

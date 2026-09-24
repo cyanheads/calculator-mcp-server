@@ -1312,6 +1312,18 @@ describe('number-mode config guard (#25)', () => {
     expect(run('config()').result).toContain('"relTol": 1e-12');
   });
 
+  it.each(['number', 'BigNumber', 'Fraction'] as const)(
+    'returns a fresh config() copy under numericType %s, so an assignment into it does not persist',
+    (numericType) => {
+      const svc = new MathService(getServerConfig());
+      const ctx = mockCtx();
+      const write = '[c = config(), c.precision = 5][2]';
+      expect(svc.evaluateExpression(write, ctx, {}, undefined, numericType).result).toMatch(/^5/);
+      const read = svc.evaluateExpression('config().precision', ctx, {}, undefined, numericType);
+      expect(read.result).toBe('64');
+    },
+  );
+
   it('keeps redaction and symbolic results', () => {
     expect(run('version').result).toBe('"redacted"');
     expect(run('2x + 3x', { operation: 'simplify' }).result).toBe('5 * x');
