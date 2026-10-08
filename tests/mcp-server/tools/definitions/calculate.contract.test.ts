@@ -427,6 +427,17 @@ describe('calculate response contract', () => {
         reason: 'multiple_expressions',
         detail: 'Multiple expressions',
       },
+      { input: { expression: '   ' }, reason: 'empty_expression', detail: 'cannot be empty' },
+      {
+        input: { expression: '1+'.repeat(700) },
+        reason: 'expression_too_long',
+        detail: 'exceeds maximum length',
+      },
+      {
+        input: { expression: 'x', scope: { constructor: 0 } },
+        reason: 'reserved_scope_key',
+        detail: 'Scope key "constructor"',
+      },
       { input: { expression: 'range(1, 1/0)' }, reason: 'result_too_large', detail: 'range()' },
       { input: { expression: 'zeros(33334)' }, reason: 'result_too_large', detail: '100000' },
     ] as const)('$reason for $input.expression', async ({ input, reason, detail }) => {
