@@ -5,7 +5,7 @@
  */
 
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { getServerConfig } from '@/config/server-config.js';
 import { calculateTool } from '@/mcp-server/tools/definitions/calculate.tool.js';
@@ -91,8 +91,7 @@ describe('disabled functions (expression scope security)', () => {
 describe('version constant redaction', () => {
   it('returns "redacted" for the version constant in expressions', async () => {
     const math = getMathService();
-    const ctx = mockCtx();
-    const { result } = math.evaluateExpression('version', ctx);
+    const { result } = math.evaluateExpression('version');
     // math.js format() wraps string values in double-quotes.
     // The important assertion is that it does NOT contain a semver number.
     expect(result).not.toMatch(/\d+\.\d+\.\d+/);
@@ -321,23 +320,19 @@ describe('symbolic operations do not bypass the hardened instance (#18)', () => 
 
   it('simplify rejects evaluate("6*7") without folding it to 42', () => {
     const math = getMathService();
-    const message = rejectedMessage(() => math.simplifyExpression('evaluate("6*7")', mockCtx()));
+    const message = rejectedMessage(() => math.simplifyExpression('evaluate("6*7")'));
     expect(message).not.toContain('42');
   });
 
   it('simplify does not leak the math.js version via evaluate("version")', () => {
     const math = getMathService();
-    const message = rejectedMessage(() =>
-      math.simplifyExpression('evaluate("version")', mockCtx()),
-    );
+    const message = rejectedMessage(() => math.simplifyExpression('evaluate("version")'));
     expect(message).not.toMatch(/\d+\.\d+\.\d+/);
   });
 
   it('simplify does not leak function source via evaluate("cos.toString()")', () => {
     const math = getMathService();
-    const message = rejectedMessage(() =>
-      math.simplifyExpression('evaluate("cos.toString()")', mockCtx()),
-    );
+    const message = rejectedMessage(() => math.simplifyExpression('evaluate("cos.toString()")'));
     expect(message).not.toContain('theTypedFn');
     expect(message).not.toContain('arguments');
   });
@@ -345,7 +340,7 @@ describe('symbolic operations do not bypass the hardened instance (#18)', () => 
   it('derivative does not leak the version via a folded coefficient', () => {
     const math = getMathService();
     const message = rejectedMessage(() =>
-      math.differentiateExpression('x * evaluate("version")', 'x', mockCtx()),
+      math.differentiateExpression('x * evaluate("version")', 'x'),
     );
     expect(message).not.toMatch(/\d+\.\d+\.\d+/);
   });
@@ -353,7 +348,7 @@ describe('symbolic operations do not bypass the hardened instance (#18)', () => 
   it('simplify still leaves a disabled non-operation call unevaluated', () => {
     // import() is not an operation name, so it reaches the folder, which cannot
     // run the disabled stub and leaves the node in place.
-    const { result } = getMathService().simplifyExpression('import("x")', mockCtx());
+    const { result } = getMathService().simplifyExpression('import("x")');
     expect(result).toContain('import');
   });
 
@@ -383,13 +378,13 @@ describe('symbolic operations do not bypass the hardened instance (#18)', () => 
 
   it('preserves legitimate constant folding after hardening', () => {
     const math = getMathService();
-    expect(math.simplifyExpression('2 + 3', mockCtx()).result).toBe('5');
-    expect(math.simplifyExpression('x * 2 * 3', mockCtx()).result).toBe('6 * x');
+    expect(math.simplifyExpression('2 + 3').result).toBe('5');
+    expect(math.simplifyExpression('x * 2 * 3').result).toBe('6 * x');
   });
 
   it('preserves normal derivative results after hardening', () => {
     const math = getMathService();
-    expect(math.differentiateExpression('x^2', 'x', mockCtx()).result).toMatch(/2\s*\*\s*x/);
+    expect(math.differentiateExpression('x^2', 'x').result).toMatch(/2\s*\*\s*x/);
   });
 });
 
@@ -811,8 +806,7 @@ describe('secrets do not appear in output', () => {
 
   it('version constant is redacted and not a semver string', () => {
     const math = getMathService();
-    const ctx = mockCtx();
-    const { result } = math.evaluateExpression('version', ctx);
+    const { result } = math.evaluateExpression('version');
     // Must not expose the real math.js version (e.g. "13.2.0") — must contain "redacted".
     expect(result).not.toMatch(/\d+\.\d+\.\d+/);
     expect(result).toContain('redacted');
@@ -830,8 +824,7 @@ describe('MathService with custom config', () => {
       evaluationTimeoutMs: 5000,
       maxResultLength: 100_000,
     });
-    const ctx = mockCtx();
-    expect(() => svc.evaluateExpression('1 + 2 + 3 + 4', ctx)).toThrow('exceeds maximum length');
+    expect(() => svc.evaluateExpression('1 + 2 + 3 + 4')).toThrow('exceeds maximum length');
   });
 
   it('accepts expression within custom maxExpressionLength', () => {
@@ -840,8 +833,7 @@ describe('MathService with custom config', () => {
       evaluationTimeoutMs: 5000,
       maxResultLength: 100_000,
     });
-    const ctx = mockCtx();
-    const { result } = svc.evaluateExpression('2 + 2', ctx);
+    const { result } = svc.evaluateExpression('2 + 2');
     expect(result).toBe('4');
   });
 
@@ -852,8 +844,7 @@ describe('MathService with custom config', () => {
       evaluationTimeoutMs: 5000,
       maxResultLength: 3,
     });
-    const ctx = mockCtx();
-    expect(() => svc.evaluateExpression('12345', ctx)).toThrow('exceeds maximum size');
+    expect(() => svc.evaluateExpression('12345')).toThrow('exceeds maximum size');
   });
 });
 
@@ -864,10 +855,8 @@ describe('MathService with custom config', () => {
 describe('numericType escalation', () => {
   it('returns BigNumber result type when numericType is "BigNumber"', () => {
     const math = getMathService();
-    const ctx = mockCtx();
     const { result, resultType } = math.evaluateExpression(
       '2 + 2',
-      ctx,
       undefined,
       undefined,
       'BigNumber',
@@ -880,10 +869,8 @@ describe('numericType escalation', () => {
     // 10000! / 9999! overflows as IEEE 754 — the default "number" path produces NaN
     // and triggers an undefined_result error. BigNumber computes it without overflow.
     const math = getMathService();
-    const ctx = mockCtx();
     const { result, resultType } = math.evaluateExpression(
       '10000! / 9999!',
-      ctx,
       undefined,
       undefined,
       'BigNumber',
@@ -895,10 +882,9 @@ describe('numericType escalation', () => {
 
   it('default "number" path still rejects large factorial ratio as undefined_result', () => {
     const math = getMathService();
-    const ctx = mockCtx();
     // Regression guard: BigNumber addition must not alter the default path.
     expectMcpError(
-      () => math.evaluateExpression('10000! / 9999!', ctx),
+      () => math.evaluateExpression('10000! / 9999!'),
       JsonRpcErrorCode.ValidationError,
       'undefined_result',
     );
@@ -906,10 +892,8 @@ describe('numericType escalation', () => {
 
   it('returns Fraction result type when numericType is "Fraction"', () => {
     const math = getMathService();
-    const ctx = mockCtx();
     const { result, resultType } = math.evaluateExpression(
       '0.1 + 0.2',
-      ctx,
       undefined,
       undefined,
       'Fraction',
@@ -955,7 +939,7 @@ describe('Fraction unsupported-result remap (#19)', () => {
     it(`remaps ${expr} to fraction_unsupported`, () => {
       const math = getMathService();
       expectMcpError(
-        () => math.evaluateExpression(expr, mockCtx(), undefined, undefined, 'Fraction'),
+        () => math.evaluateExpression(expr, undefined, undefined, 'Fraction'),
         JsonRpcErrorCode.ValidationError,
         'fraction_unsupported',
       );
@@ -964,14 +948,14 @@ describe('Fraction unsupported-result remap (#19)', () => {
 
   it('does not remap the same expression under number mode', () => {
     const math = getMathService();
-    const { resultType } = math.evaluateExpression('sqrt(2)', mockCtx());
+    const { resultType } = math.evaluateExpression('sqrt(2)');
     expect(resultType).toBe('number');
   });
 
   it('keeps a genuine parse error as parse_failed under Fraction mode', () => {
     const math = getMathService();
     expectMcpError(
-      () => math.evaluateExpression('2 +* 3', mockCtx(), undefined, undefined, 'Fraction'),
+      () => math.evaluateExpression('2 +* 3', undefined, undefined, 'Fraction'),
       JsonRpcErrorCode.ValidationError,
       'parse_failed',
     );
@@ -981,7 +965,6 @@ describe('Fraction unsupported-result remap (#19)', () => {
     const math = getMathService();
     const { result, resultType } = math.evaluateExpression(
       '1/3 + 1/6',
-      mockCtx(),
       undefined,
       undefined,
       'Fraction',
@@ -998,17 +981,17 @@ describe('Fraction unsupported-result remap (#19)', () => {
 describe('length/len aliases resolve to count (#20)', () => {
   it('counts array elements via length', () => {
     const math = getMathService();
-    expect(math.evaluateExpression('length([1, 2, 3])', mockCtx()).result).toBe('3');
+    expect(math.evaluateExpression('length([1, 2, 3])').result).toBe('3');
   });
 
   it('counts string characters via len', () => {
     const math = getMathService();
-    expect(math.evaluateExpression('len("abc")', mockCtx()).result).toBe('3');
+    expect(math.evaluateExpression('len("abc")').result).toBe('3');
   });
 
   it('counts matrix elements via length', () => {
     const math = getMathService();
-    expect(math.evaluateExpression('length([1, 2; 3, 4])', mockCtx()).result).toBe('4');
+    expect(math.evaluateExpression('length([1, 2; 3, 4])').result).toBe('4');
   });
 
   it('resolves the alias under every numericType mode (per-instance import)', () => {
@@ -1016,7 +999,6 @@ describe('length/len aliases resolve to count (#20)', () => {
     for (const numericType of ['number', 'BigNumber', 'Fraction'] as const) {
       const { result } = math.evaluateExpression(
         'length([1, 2, 3])',
-        mockCtx(),
         undefined,
         undefined,
         numericType,
@@ -1033,8 +1015,7 @@ describe('length/len aliases resolve to count (#20)', () => {
 describe('simplify unchanged detection', () => {
   it('returns unchanged: false when simplification makes progress', () => {
     const math = getMathService();
-    const ctx = mockCtx();
-    const { result, unchanged } = math.simplifyExpression('2x + 3x', ctx);
+    const { result, unchanged } = math.simplifyExpression('2x + 3x');
     expect(result).toBe('5 * x');
     expect(unchanged).toBe(false);
   });
@@ -1042,15 +1023,13 @@ describe('simplify unchanged detection', () => {
   it('returns unchanged: true for rational expression requiring polynomial factoring', () => {
     // math.js built-in simplifier cannot factor (x^2-1)/(x-1) to (x+1).
     const math = getMathService();
-    const ctx = mockCtx();
-    const { unchanged } = math.simplifyExpression('(x^2 - 1) / (x - 1)', ctx);
+    const { unchanged } = math.simplifyExpression('(x^2 - 1) / (x - 1)');
     expect(unchanged).toBe(true);
   });
 
   it('returns unchanged: false when a trig identity collapses the expression', () => {
     const math = getMathService();
-    const ctx = mockCtx();
-    const { result, unchanged } = math.simplifyExpression('sin(x)^2 + cos(x)^2', ctx);
+    const { result, unchanged } = math.simplifyExpression('sin(x)^2 + cos(x)^2');
     expect(result).toBe('1');
     expect(unchanged).toBe(false);
   });
@@ -1060,16 +1039,14 @@ describe('simplify unchanged detection', () => {
     // changing its structure, unchanged should be true — both AST-normalised forms match.
     // "x + 0" simplifies to "x" — a real structural change, so unchanged is false.
     const math = getMathService();
-    const ctx = mockCtx();
-    const { result, unchanged } = math.simplifyExpression('x + 0', ctx);
+    const { result, unchanged } = math.simplifyExpression('x + 0');
     expect(result).toBe('x');
     expect(unchanged).toBe(false);
   });
 
   it('always includes unchanged in the result object', () => {
     const math = getMathService();
-    const ctx = mockCtx();
-    const result = math.simplifyExpression('2x + 3x', ctx);
+    const result = math.simplifyExpression('2x + 3x');
     expect(result).toHaveProperty('unchanged');
     expect(typeof result.unchanged).toBe('boolean');
   });
@@ -1112,6 +1089,20 @@ function failure(expression: string, options: EvalOptions = {}): McpError {
 function reasonOf(expression: string, options: EvalOptions = {}) {
   const err = failure(expression, options);
   return err.data?.reason;
+}
+
+/**
+ * The recovery hint a failing call carries on the wire. The framework fills a
+ * reason's declared hint when the throw carries none, so this runs the call
+ * through the response pipeline rather than the bare handler.
+ */
+async function wireHint(expression: string, options: EvalOptions = {}) {
+  const result = await runToolContract(calculateTool, { expression, ...options });
+  expect(result.isError, `expected "${expression}" to fail`).toBe(true);
+  const { error } = result.structuredContent as {
+    error: { data?: { recovery?: { hint?: string } } };
+  };
+  return error.data?.recovery?.hint;
 }
 
 // ---------------------------------------------------------------------------
@@ -1190,12 +1181,12 @@ describe('non-finite results in every numeric type (#21)', () => {
     ['fraction(1)/0', {}],
   ];
 
-  it.each(undefinedCases)('rejects %s %o as undefined_result', (expression, options) => {
+  it.each(undefinedCases)('rejects %s %o as undefined_result', async (expression, options) => {
     const err = failure(expression, options);
     expect(err.data?.reason).toBe('undefined_result');
-    expect(err.data?.recovery).toEqual({
-      hint: 'Division by zero, 0/0, and log(0) are undefined in every numericType, so fix the expression; for an overflow (large powers, factorials, exp), retry with numericType "BigNumber".',
-    });
+    expect(await wireHint(expression, options)).toBe(
+      'Division by zero, 0/0, and log(0) are undefined in every numericType, so fix the expression; for an overflow (large powers, factorials, exp), retry with numericType "BigNumber".',
+    );
   });
 
   it('keeps finite results', () => {
@@ -1316,10 +1307,9 @@ describe('number-mode config guard (#25)', () => {
     'returns a fresh config() copy under numericType %s, so an assignment into it does not persist',
     (numericType) => {
       const svc = new MathService(getServerConfig());
-      const ctx = mockCtx();
       const write = '[c = config(), c.precision = 5][2]';
-      expect(svc.evaluateExpression(write, ctx, {}, undefined, numericType).result).toMatch(/^5/);
-      const read = svc.evaluateExpression('config().precision', ctx, {}, undefined, numericType);
+      expect(svc.evaluateExpression(write, {}, undefined, numericType).result).toMatch(/^5/);
+      const read = svc.evaluateExpression('config().precision', {}, undefined, numericType);
       expect(read.result).toBe('64');
     },
   );
@@ -1336,9 +1326,8 @@ describe('number-mode config guard (#25)', () => {
 // ---------------------------------------------------------------------------
 
 describe('operation names called as functions (#27)', () => {
-  const recovery = {
-    hint: 'Send the inner expression as `expression` with `operation` set to that function name; for `derivative`, also pass `variable`.',
-  };
+  const recovery =
+    'Send the inner expression as `expression` with `operation` set to that function name; for `derivative`, also pass `variable`.';
 
   it.each([
     ['derivative("0.2*x + 5", "x")', {}, 'derivative'],
@@ -1351,10 +1340,10 @@ describe('operation names called as functions (#27)', () => {
     ['x * derivative("x^2", "x")', { operation: 'derivative', variable: 'x' }, 'derivative'],
     ['derivative(x^2, x)', {}, 'derivative'],
     ['[1, evaluate("2")]', {}, 'evaluate'],
-  ] as Array<[string, EvalOptions, string]>)('rejects %s %o', (expression, options, fn) => {
+  ] as Array<[string, EvalOptions, string]>)('rejects %s %o', async (expression, options, fn) => {
     const err = failure(expression, options);
     expect(err.data?.reason).toBe('operation_as_function');
-    expect(err.data?.recovery).toEqual(recovery);
+    expect(await wireHint(expression, options)).toBe(recovery);
     expect(err.message).toContain(`"${fn}"`);
     expect(err.message).toContain(`operation: "${fn}"`);
   });
@@ -1394,13 +1383,13 @@ describe('failure classification by stage (#29)', () => {
     ['equal(1 m, 1)', 'equalScalar'],
     ['sin(5 kg)', 'is no angle'],
     ['fraction(0.1) + bignumber(1)', 'Cannot implicitly convert'],
-  ])('classifies %s as type_mismatch', (expression, detail) => {
+  ])('classifies %s as type_mismatch', async (expression, detail) => {
     const err = failure(expression);
     expect(err.data?.reason).toBe('type_mismatch');
     expect(err.message).toContain(detail);
-    expect(err.data?.recovery).toEqual({
-      hint: 'Attach the same unit to the bare operand (`5 kg + 3 kg`) or strip it (`number(5 kg, "kg") + 3`), keep exponents unitless, and use numbers instead of strings.',
-    });
+    expect(await wireHint(expression)).toBe(
+      'Attach the same unit to the bare operand (`5 kg + 3 kg`) or strip it (`number(5 kg, "kg") + 3`), keep exponents unitless, and use numbers instead of strings.',
+    );
   });
 
   it.each([
@@ -1413,12 +1402,12 @@ describe('failure classification by stage (#29)', () => {
     '[1,2] + [1,2,3]',
     '[1,2][5]',
     '[[1, 2], [3, 4]][3, 1]',
-  ])('classifies %s as evaluation_failed', (expression) => {
+  ])('classifies %s as evaluation_failed', async (expression) => {
     const err = failure(expression);
     expect(err.data?.reason).toBe('evaluation_failed');
-    expect(err.data?.recovery).toEqual({
-      hint: 'The syntax is valid — fix the argument the error message names (its count, value range, or matrix dimensions) and retry.',
-    });
+    expect(await wireHint(expression)).toBe(
+      'The syntax is valid — fix the argument the error message names (its count, value range, or matrix dimensions) and retry.',
+    );
   });
 
   it.each([
@@ -1431,12 +1420,12 @@ describe('failure classification by stage (#29)', () => {
     'unit("5 foo")',
     'import("x")',
     'config({number: "BigNumber"})',
-  ])('keeps %s as parse_failed', (expression) => {
+  ])('keeps %s as parse_failed', async (expression) => {
     const err = failure(expression);
     expect(err.data?.reason).toBe('parse_failed');
-    expect(err.data?.recovery).toEqual({
-      hint: 'Check syntax for balanced parentheses, valid operators, and correct function and unit names; pass variable values through scope.',
-    });
+    expect(await wireHint(expression)).toBe(
+      'Check syntax for balanced parentheses, valid operators, and correct function and unit names; pass variable values through scope.',
+    );
   });
 
   it('keeps evaluating on the same service after a timeout and a failure', () => {
@@ -1446,17 +1435,17 @@ describe('failure classification by stage (#29)', () => {
       maxResultLength: 100_000,
     });
     expectMcpError(
-      () => svc.evaluateExpression('sum(map(range(1, 1e6), x^2))', mockCtx()),
+      () => svc.evaluateExpression('sum(map(range(1, 1e6), x^2))'),
       JsonRpcErrorCode.Timeout,
       'evaluation_timeout',
     );
     expectMcpError(
-      () => svc.evaluateExpression('5 kg + 3', mockCtx()),
+      () => svc.evaluateExpression('5 kg + 3'),
       JsonRpcErrorCode.ValidationError,
       'type_mismatch',
     );
-    expect(svc.evaluateExpression('2 + 3', mockCtx()).result).toBe('5');
-    expect(svc.simplifyExpression('2x + 3x', mockCtx()).result).toBe('5 * x');
+    expect(svc.evaluateExpression('2 + 3').result).toBe('5');
+    expect(svc.simplifyExpression('2x + 3x').result).toBe('5 * x');
   });
 
   it('classifies a failing derivative after a clean parse as evaluation_failed', () => {
@@ -1475,7 +1464,7 @@ describe('failure classification by stage (#29)', () => {
       maxResultLength: 100_000,
     });
     expectMcpError(
-      () => slow.evaluateExpression('sum(map(range(1, 1e6), x^2))', mockCtx()),
+      () => slow.evaluateExpression('sum(map(range(1, 1e6), x^2))'),
       JsonRpcErrorCode.Timeout,
       'evaluation_timeout',
     );
@@ -1489,14 +1478,14 @@ describe('failure classification by stage (#29)', () => {
 describe('help() in an expression (#31)', () => {
   it.each(['help("sin")', 'help(sin)', '{a: help("sin")}', '[help("sin")]'])(
     'rejects %s with a declared reason',
-    (expression) => {
+    async (expression) => {
       const err = failure(expression);
       expect(err.code).toBe(JsonRpcErrorCode.ValidationError);
       expect(err.data?.reason).toBe('disallowed_result_type');
       expect(err.message).toContain('calculator://help');
-      expect(err.data?.recovery).toEqual({
-        hint: 'Rewrite the expression to produce a value (number, matrix, unit) instead of a function or its source; for function documentation, read the calculator://help resource.',
-      });
+      expect(await wireHint(expression)).toBe(
+        'Rewrite the expression to produce a value (number, matrix, unit) instead of a function or its source; for function documentation, read the calculator://help resource.',
+      );
     },
   );
 
@@ -1643,7 +1632,7 @@ describe('scope is never mutated by evaluation (#34)', () => {
   ])('evaluates %s without changing the caller scope', (expression, scope, expected) => {
     const callerScope = { ...scope };
     const svc = getMathService();
-    expect(svc.evaluateExpression(expression, mockCtx(), callerScope).result).toBe(expected);
+    expect(svc.evaluateExpression(expression, callerScope).result).toBe(expected);
     expect(callerScope).toEqual(scope);
   });
 
@@ -2065,32 +2054,32 @@ describe('a function used as a value (#38)', () => {
   it.each([
     ['5 min to s', 'min', 'minute'],
     ['5 sec to ms', 'sec', 's'],
-  ])('%s names %s as a function and points to the unit %s', (expression, name, unit) => {
+  ])('%s names %s as a function and points to the unit %s', async (expression, name, unit) => {
     const err = failure(expression);
     expect(err.data?.reason).toBe('type_mismatch');
     expect(err.message).toContain(`"${name}" is a function`);
     expect(err.message).toContain(`"${unit}"`);
     expect(hintOf(err)).toContain(`write ${unit}`);
-    expect(hintOf(err)).not.toBe(unitHint);
+    expect(await wireHint(expression)).toBe(hintOf(err));
   });
 
   it.each([
     ['(f(x) = x^2)(3)', undefined],
     ['sin + 1', 'sin'],
     ['2 * max', 'max'],
-  ])('%s says a function was used as a value', (expression, name) => {
+  ])('%s says a function was used as a value', async (expression, name) => {
     const err = failure(expression);
     expect(err.data?.reason).toBe('type_mismatch');
     expect(err.message).toContain('a function was used as a value');
     if (name) expect(err.message).toContain(`"${name}" is a function`);
     expect(hintOf(err)).toContain('parentheses');
-    expect(hintOf(err)).not.toBe(unitHint);
+    expect(await wireHint(expression)).toBe(hintOf(err));
   });
 
-  it('keeps the unit recovery for a real unit mismatch', () => {
+  it('keeps the unit recovery for a real unit mismatch', async () => {
     const err = failure('5 kg + 3');
     expect(err.data?.reason).toBe('type_mismatch');
-    expect(hintOf(err)).toBe(unitHint);
+    expect(await wireHint('5 kg + 3')).toBe(unitHint);
   });
 
   it('leaves the units and a scope value of the same name alone', () => {
@@ -2134,9 +2123,9 @@ describe('custom units and unit simplification (#37)', () => {
     'simplifies %s to %s as stock math.js does, before and after other calls',
     (expression, expected) => {
       const svc = new MathService(getServerConfig());
-      expect(svc.evaluateExpression(expression, mockCtx()).result).toBe(expected);
-      for (const primer of primers) svc.evaluateExpression(primer, mockCtx());
-      expect(svc.evaluateExpression(expression, mockCtx()).result).toBe(expected);
+      expect(svc.evaluateExpression(expression).result).toBe(expected);
+      for (const primer of primers) svc.evaluateExpression(primer);
+      expect(svc.evaluateExpression(expression).result).toBe(expected);
     },
   );
 

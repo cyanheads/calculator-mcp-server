@@ -5,7 +5,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { internalError, JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getMathService } from '@/services/math/math-service.js';
 import { MAX_EVALUATION_ELEMENTS, MAX_MATRIX_ELEMENTS } from '@/services/math/size-guard.js';
 
@@ -219,7 +219,7 @@ export const calculateTool = tool('calculate', {
       case 'evaluate':
         ctx.log.info('Evaluated expression', { expression, numericType });
         return {
-          ...math.evaluateExpression(expression, ctx, scope, precision, numericType),
+          ...math.evaluateExpression(expression, scope, precision, numericType),
           expression,
           operation,
           // Omit context fields that carry no signal: scopeVars only when a scope
@@ -228,7 +228,7 @@ export const calculateTool = tool('calculate', {
           ...(precision !== undefined ? { precisionUsed: precision } : {}),
         };
       case 'simplify': {
-        const simplifyResult = math.simplifyExpression(expression, ctx);
+        const simplifyResult = math.simplifyExpression(expression);
         ctx.log.info('Simplified expression', { expression, unchanged: simplifyResult.unchanged });
         // Symbolic operations never carry scope/precision context — omit both.
         // Always include unchanged so callers can detect no-op simplifications (#1).
@@ -245,18 +245,17 @@ export const calculateTool = tool('calculate', {
           throw ctx.fail(
             'derivative_missing_variable',
             "The 'variable' parameter is required when operation is 'derivative'.",
-            { ...ctx.recoveryFor('derivative_missing_variable') },
           );
         }
         ctx.log.info('Differentiated expression', { expression, variable });
         // Symbolic operations never carry scope/precision context — omit both.
         return {
-          ...math.differentiateExpression(expression, variable, ctx),
+          ...math.differentiateExpression(expression, variable),
           expression,
           operation,
         };
       default:
-        throw new Error(`Unhandled operation: ${operation as string}`);
+        throw internalError(`Unhandled operation: ${operation as string}`);
     }
   },
 

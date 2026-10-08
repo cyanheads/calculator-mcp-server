@@ -8,7 +8,6 @@
  */
 
 import vm from 'node:vm';
-import type { Context } from '@cyanheads/mcp-ts-core';
 import { McpError, timeout, validationError } from '@cyanheads/mcp-ts-core/errors';
 import {
   all,
@@ -725,17 +724,16 @@ export class MathService {
   /** Evaluate a math expression with optional variable scope, precision, and numeric type. */
   evaluateExpression(
     expression: string,
-    ctx: Context,
     scope?: Record<string, number>,
     precision?: number,
     numericType: NumericType = 'number',
   ): MathResult {
-    this.validateInput(expression, ctx);
-    if (scope) this.validateScope(scope, ctx);
+    this.validateInput(expression);
+    if (scope) this.validateScope(scope);
     const inst = this.instanceFor(numericType);
     // Parse with the instance for the requested numericType: constant nodes take
     // their numeric type at parse time.
-    const { tree, functionValues } = this.parseExpression(expression, inst, ctx);
+    const { tree, functionValues } = this.parseExpression(expression, inst);
     // Evaluation, result inspection, and formatting all run inside the timeout, so
     // no result reaches formatting unchecked and no step runs unbounded (#31).
     return this.runWithTimeout(
@@ -747,8 +745,8 @@ export class MathService {
         );
         const raw = tree.compile().evaluate(new Map(variables));
         const resultType = inst.typeOf(raw);
-        this.validateResultType(resultType, ctx);
-        this.validateResultValue(raw, ctx, numericType);
+        this.validateResultType(resultType);
+        this.validateResultValue(raw, numericType);
         // Match JS Number.toString thresholds — math.js defaults to exp ≥ 5,
         // which would render 83810205 as "8.3810205e+7".
         const result = inst.format(raw, {
@@ -756,10 +754,9 @@ export class MathService {
           upperExp: 21,
           ...(precision != null && { precision }),
         });
-        this.validateResultSize(result, ctx);
+        this.validateResultSize(result);
         return { result, resultType };
       },
-      ctx,
       {
         operation: 'evaluate',
         numericType,
@@ -770,32 +767,30 @@ export class MathService {
   }
 
   /** Simplify an algebraic expression symbolically. */
-  simplifyExpression(expression: string, ctx: Context): MathResult {
-    this.validateInput(expression, ctx);
-    const { tree } = this.parseExpression(expression, this.defaultInstance, ctx);
+  simplifyExpression(expression: string): MathResult {
+    this.validateInput(expression);
+    const { tree } = this.parseExpression(expression, this.defaultInstance);
     // Capture the alias-normalized input before simplification so we can detect
     // whether the simplifier made any progress. String comparison of the raw input
     // is not sufficient — formatting-only changes like `x+1` vs `x + 1` should not
     // count as progress — so both sides are compared as math.js renders them.
     const inputNormalized = tree.toString();
-    const result = this.runWithTimeout(
-      () => this.simplify(tree, this.simplifyRules).toString(),
-      ctx,
-      { operation: 'simplify' },
-    );
-    this.validateResultSize(result, ctx);
+    const result = this.runWithTimeout(() => this.simplify(tree, this.simplifyRules).toString(), {
+      operation: 'simplify',
+    });
+    this.validateResultSize(result);
     return { result, resultType: 'string', unchanged: inputNormalized === result };
   }
 
   /** Compute the symbolic derivative of an expression with respect to a variable. */
-  differentiateExpression(expression: string, variable: string, ctx: Context): MathResult {
-    this.validateInput(expression, ctx);
-    const { tree } = this.parseExpression(expression, this.defaultInstance, ctx);
-    const result = this.runWithTimeout(() => this.derivative(tree, variable).toString(), ctx, {
+  differentiateExpression(expression: string, variable: string): MathResult {
+    this.validateInput(expression);
+    const { tree } = this.parseExpression(expression, this.defaultInstance);
+    const result = this.runWithTimeout(() => this.derivative(tree, variable).toString(), {
       operation: 'derivative',
       variable,
     });
-    this.validateResultSize(result, ctx);
+    this.validateResultSize(result);
     return { result, resultType: 'string' };
   }
 
@@ -804,13 +799,12 @@ export class MathService {
     return HELP_CONTENT;
   }
 
-  private validateInput(expression: string, ctx: Context): void {
+  private validateInput(expression: string): void {
     if (!expression.trim()) {
-      throw declared(ctx, 'empty_expression', 'Expression cannot be empty.');
+      throw declared('empty_expression', 'Expression cannot be empty.');
     }
     if (expression.length > this.config.maxExpressionLength) {
       throw declared(
-        ctx,
         'expression_too_long',
         `Expression exceeds maximum length of ${this.config.maxExpressionLength} characters.`,
       );
@@ -834,7 +828,6 @@ export class MathService {
   private parseExpression(
     expression: string,
     inst: MathInstance,
-    ctx: Context,
   ): { tree: MathNode; functionValues: string[] } {
     inst.resetUnitSystem();
     let tree: MathNode;
@@ -845,11 +838,11 @@ export class MathService {
         expression.includes('\r') &&
         this.parsesAsBlock(expression.replace(/\r\n?/g, '\n'), inst)
       ) {
-        throw this.multipleExpressions(ctx);
+        throw this.multipleExpressions();
       }
-      throw declared(ctx, 'parse_failed', `Invalid expression: ${errorMessage(err)}`);
+      throw declared('parse_failed', `Invalid expression: ${errorMessage(err)}`);
     }
-    if (tree.type === 'BlockNode') throw this.multipleExpressions(ctx);
+    if (tree.type === 'BlockNode') throw this.multipleExpressions();
 
     const { stringifies, operationCall, valueNames } = inspectTree(tree);
     // `.toString()` / `.toLocaleString()` on a function-valued identifier
@@ -860,7 +853,6 @@ export class MathService {
     // accessor, and is unaffected.
     if (stringifies) {
       throw declared(
-        ctx,
         'disallowed_result_type',
         'Converting a function to a string is not allowed — it would expose internal source.',
       );
@@ -868,7 +860,6 @@ export class MathService {
     if (operationCall !== undefined) {
       const variableHint = operationCall === 'derivative' ? ' and pass `variable`' : '';
       throw declared(
-        ctx,
         'operation_as_function',
         `"${operationCall}" is an operation, not a function available inside expressions. Send the inner expression as \`expression\` with \`operation: "${operationCall}"\`${variableHint}.`,
       );
@@ -885,20 +876,18 @@ export class MathService {
     }
   }
 
-  private multipleExpressions(ctx: Context): McpError {
+  private multipleExpressions(): McpError {
     return declared(
-      ctx,
       'multiple_expressions',
       'Multiple expressions are not allowed. Submit one expression per call.',
     );
   }
 
   /** Reject scope keys that could pollute the object prototype chain. */
-  private validateScope(scope: Record<string, number>, ctx: Context): void {
+  private validateScope(scope: Record<string, number>): void {
     for (const key of Object.keys(scope)) {
       if (BLOCKED_SCOPE_KEYS.has(key)) {
         throw declared(
-          ctx,
           'reserved_scope_key',
           `Scope key "${key}" is not allowed — it conflicts with a reserved property name.`,
         );
@@ -907,10 +896,9 @@ export class MathService {
   }
 
   /** Reject result types that leak internals (functions, parsers, multi-expression ResultSets). */
-  private validateResultType(resultType: string, ctx: Context): void {
+  private validateResultType(resultType: string): void {
     if (BLOCKED_RESULT_TYPES.has(resultType)) {
       throw declared(
-        ctx,
         'disallowed_result_type',
         `Expression produced a ${resultType}, which cannot be returned — the result must be a value, not a function.`,
       );
@@ -924,10 +912,10 @@ export class MathService {
    * stringified), any non-finite number, scalar or nested (#21), and under
    * numericType "Fraction", any float approximation, scalar or nested (#35).
    */
-  private validateResultValue(raw: unknown, ctx: Context, numericType: NumericType): void {
+  private validateResultValue(raw: unknown, numericType: NumericType): void {
     const { maxResultLength } = this.config;
     if (typeof raw === 'string' && raw.length > maxResultLength) {
-      throw this.resultTooLarge(ctx);
+      throw this.resultTooLarge();
     }
     const elementLimit = Math.floor(maxResultLength / MIN_CHARS_PER_ELEMENT);
     const scan: ResultScan = {
@@ -940,24 +928,22 @@ export class MathService {
     scanResult(raw, elementLimit, scan);
     if (scan.help) {
       throw declared(
-        ctx,
         'disallowed_result_type',
         'help() is not available inside expressions — read the calculator://help resource for the function reference.',
       );
     }
-    if (scan.elements > elementLimit) throw this.resultTooLarge(ctx);
-    if (scan.nonFinite) throw declared(ctx, 'undefined_result', UNDEFINED_RESULT_MESSAGE);
-    if (scan.inexact) throw declared(ctx, 'fraction_unsupported', FRACTION_FLOAT_MESSAGE);
+    if (scan.elements > elementLimit) throw this.resultTooLarge();
+    if (scan.nonFinite) throw declared('undefined_result', UNDEFINED_RESULT_MESSAGE);
+    if (scan.inexact) throw declared('fraction_unsupported', FRACTION_FLOAT_MESSAGE);
   }
 
   /** Reject results that exceed the configured maximum size. */
-  private validateResultSize(result: string, ctx: Context): void {
-    if (result.length > this.config.maxResultLength) throw this.resultTooLarge(ctx);
+  private validateResultSize(result: string): void {
+    if (result.length > this.config.maxResultLength) throw this.resultTooLarge();
   }
 
-  private resultTooLarge(ctx: Context): McpError {
+  private resultTooLarge(): McpError {
     return declared(
-      ctx,
       'result_too_large',
       `Result exceeds maximum size (${this.config.maxResultLength} characters). Reduce matrix dimensions or simplify the expression.`,
     );
@@ -972,7 +958,7 @@ export class MathService {
    * afterwards. A fresh context per call costs ~100 µs and, under Bun, retains
    * ~100 KB of memory per call.
    */
-  private runWithTimeout<T>(fn: () => T, ctx: Context, stage: FailureStage): T {
+  private runWithTimeout<T>(fn: () => T, stage: FailureStage): T {
     const { sandbox } = this;
     sandbox.fn = fn;
     beginEvaluation();
@@ -980,7 +966,7 @@ export class MathService {
       TIMED_CALL.runInContext(sandbox, { timeout: this.config.evaluationTimeoutMs });
       return sandbox.result as T;
     } catch (err) {
-      throw this.classifyFailure(err, ctx, stage);
+      throw this.classifyFailure(err, stage);
     } finally {
       sandbox.fn = undefined;
       sandbox.result = undefined;
@@ -1009,7 +995,7 @@ export class MathService {
    *    `evaluation_failed` (#29). Stage decides, not error class: a runtime
    *    `SyntaxError` such as `number("abc")` lands here, never in `parse_failed`.
    */
-  private classifyFailure(err: unknown, ctx: Context, stage: FailureStage): McpError {
+  private classifyFailure(err: unknown, stage: FailureStage): McpError {
     const { numericType } = stage;
     if (err instanceof McpError) return err;
     const message = errorMessage(err);
@@ -1021,24 +1007,24 @@ export class MathService {
     if (timedOut) {
       return timeout(
         `Expression evaluation timed out after ${this.config.evaluationTimeoutMs / 1000} seconds. Simplify the expression or reduce matrix dimensions.`,
-        { reason: 'evaluation_timeout', ...ctx.recoveryFor('evaluation_timeout') },
+        { reason: 'evaluation_timeout' },
       );
     }
     const limitError = sizeLimitErrorIn(err);
     if (limitError) {
-      return declared(ctx, 'result_too_large', `Size limit exceeded: ${limitError.message}`);
+      return declared('result_too_large', `Size limit exceeded: ${limitError.message}`);
     }
     if (numericType === 'Fraction' && FRACTION_CONVERSION_ERROR.test(message)) {
-      return declared(ctx, 'fraction_unsupported', FRACTION_FUNCTION_MESSAGE);
+      return declared('fraction_unsupported', FRACTION_FUNCTION_MESSAGE);
     }
     if (numericType === 'Fraction' && FLOAT_TO_FRACTION_ERROR.test(message)) {
-      return declared(ctx, 'fraction_unsupported', FRACTION_FLOAT_MESSAGE);
+      return declared('fraction_unsupported', FRACTION_FLOAT_MESSAGE);
     }
     if (FRACTION_DIVISION_BY_ZERO.test(message)) {
-      return declared(ctx, 'undefined_result', UNDEFINED_RESULT_MESSAGE);
+      return declared('undefined_result', UNDEFINED_RESULT_MESSAGE);
     }
     if (NAME_ERROR.test(message)) {
-      return declared(ctx, 'parse_failed', `Invalid expression: ${message}`);
+      return declared('parse_failed', `Invalid expression: ${message}`);
     }
     if (stage.operation !== 'evaluate') return symbolicFailure(stage, message);
     const data = (err as { data?: { category?: unknown; actual?: unknown } } | null)?.data;
@@ -1051,9 +1037,9 @@ export class MathService {
       return functionAsValue(stage.functionValues, message);
     }
     if (category === 'wrongType' || TYPE_MISMATCH_ERROR.test(message)) {
-      return declared(ctx, 'type_mismatch', `Type mismatch: ${message}`);
+      return declared('type_mismatch', `Type mismatch: ${message}`);
     }
-    return declared(ctx, 'evaluation_failed', `Evaluation failed: ${message}`);
+    return declared('evaluation_failed', `Evaluation failed: ${message}`);
   }
 }
 
@@ -1122,9 +1108,12 @@ function functionAsValue(names: string[], detail: string): McpError {
   );
 }
 
-/** A validation error carrying `reason` and the recovery hint its contract entry declares. */
-function declared(ctx: Context, reason: string, message: string): McpError {
-  return validationError(message, { reason, ...ctx.recoveryFor(reason) });
+/**
+ * A validation error carrying `reason`. The framework fills the recovery hint the
+ * tool's contract entry declares for that reason on the way to the client.
+ */
+function declared(reason: string, message: string): McpError {
+  return validationError(message, { reason });
 }
 
 /** Message of a thrown value, whatever its type. */

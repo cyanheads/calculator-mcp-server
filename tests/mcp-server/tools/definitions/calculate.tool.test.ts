@@ -545,7 +545,7 @@ describe('calculate tool', () => {
         maxResultLength: 5,
       });
       expectMcpError(
-        () => svc.evaluateExpression('123456789', mockCtx()),
+        () => svc.evaluateExpression('123456789'),
         JsonRpcErrorCode.ValidationError,
         'result_too_large',
       );
@@ -655,7 +655,7 @@ describe('calculate tool', () => {
         maxResultLength: 1_000_000,
       });
       expectMcpError(
-        () => svc.evaluateExpression('sum(map(range(1, 1e6), x^2))', mockCtx()),
+        () => svc.evaluateExpression('sum(map(range(1, 1e6), x^2))'),
         JsonRpcErrorCode.Timeout,
         'evaluation_timeout',
       );

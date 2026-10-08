@@ -6,7 +6,7 @@
  */
 
 import { McpError } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { getServerConfig } from '@/config/server-config.js';
 import { calculateTool } from '@/mcp-server/tools/definitions/calculate.tool.js';
@@ -19,18 +19,8 @@ import {
 
 type NumericType = 'number' | 'BigNumber' | 'Fraction';
 
-function mockCtx() {
-  return createMockContext({ errors: calculateTool.errors });
-}
-
 function evaluate(expression: string, numericType: NumericType = 'number') {
-  return getMathService().evaluateExpression(
-    expression,
-    mockCtx(),
-    undefined,
-    undefined,
-    numericType,
-  );
+  return getMathService().evaluateExpression(expression, undefined, undefined, numericType);
 }
 
 /** Evaluate expecting a failure; return the error and how long the call took. */
@@ -112,10 +102,17 @@ describe('oversized constructions are rejected before allocating', () => {
     },
   );
 
-  it('carries the declared recovery hint', () => {
-    const { error } = timedFailure('range(1, 5e6)');
-    expect(error.data?.recovery).toEqual({
-      hint: 'Reduce precision, narrow the input range, or compute smaller subproblems separately.',
+  it('reaches the client with the declared recovery hint', async () => {
+    const result = await runToolContract(calculateTool, { expression: 'range(1, 5e6)' });
+    expect(result.structuredContent).toMatchObject({
+      error: {
+        data: {
+          reason: 'result_too_large',
+          recovery: {
+            hint: 'Reduce precision, narrow the input range, or compute smaller subproblems separately.',
+          },
+        },
+      },
     });
   });
 });
@@ -162,8 +159,8 @@ describe('result elements are bounded before formatting', () => {
       evaluationTimeoutMs: 5000,
       maxResultLength: 1000,
     });
-    expect(svc.evaluateExpression('zeros(333)', mockCtx()).result.length).toBe(999);
-    expect(() => svc.evaluateExpression('zeros(334)', mockCtx())).toThrow(
+    expect(svc.evaluateExpression('zeros(333)').result.length).toBe(999);
+    expect(() => svc.evaluateExpression('zeros(334)')).toThrow(
       'Result exceeds maximum size (1000 characters)',
     );
   });
@@ -194,7 +191,7 @@ describe('per-evaluation element budget', () => {
     const literal = `[${Array.from({ length: 1000 }, () => 'x').join(',')}]`;
     let caught: unknown;
     try {
-      svc.evaluateExpression(`size(map(range(1, 1e6), ${literal}))`, mockCtx());
+      svc.evaluateExpression(`size(map(range(1, 1e6), ${literal}))`);
     } catch (err) {
       caught = err;
     }
@@ -333,7 +330,7 @@ describe('guarded functions keep their math.js behavior', () => {
   it('constant folding in simplify hits the same limit and leaves the call', () => {
     const svc = getMathService();
     const started = performance.now();
-    expect(svc.simplifyExpression('zeros(5000, 5000)', mockCtx()).result).toBe('zeros(5000, 5000)');
+    expect(svc.simplifyExpression('zeros(5000, 5000)').result).toBe('zeros(5000, 5000)');
     expect(performance.now() - started).toBeLessThan(1500);
   });
 });
