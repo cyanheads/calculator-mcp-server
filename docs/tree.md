@@ -1,6 +1,6 @@
 # calculator-mcp-server - Directory Structure
 
-Generated on: 2026-09-24 23:04:33
+Generated on: 2026-10-08 12:15:35
 
 ```text
 calculator-mcp-server/
@@ -132,9 +132,11 @@ calculator-mcp-server/
 │   ├── devcheck.ts
 │   ├── devdocs.ts
 │   ├── fetch-openapi-spec.ts
+│   ├── install-otel.ts
 │   ├── lint-mcp.ts
 │   ├── lint-packaging.ts
 │   ├── list-skills.ts
+│   ├── prune-musl-packages.ts
 │   ├── release-github.ts
 │   ├── split-changelog.ts
 │   ├── tree.ts
