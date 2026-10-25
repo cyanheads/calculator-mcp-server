@@ -372,7 +372,7 @@ function assertFormatSize(fn: string, value: unknown, options: unknown): void {
   const notation = isOptionsObject ? (options as { notation?: unknown }).notation : undefined;
   const factor = typeof notation === 'string' ? DIGITS_PER_DECIMAL_DIGIT[notation] : undefined;
   const digits = factor === undefined ? 0 : maxBigNumberExponent(value) * factor;
-  const length = digits + (precision > 0 ? precision : 0);
+  const length = precision > 0 ? digits + precision : digits;
   if (length > 0) assertCharacters(fn, length);
 }
 
