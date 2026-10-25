@@ -6,6 +6,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { internalError, JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline } from '@cyanheads/mcp-ts-core/utils';
 import { getMathService } from '@/services/math/math-service.js';
 import { MAX_EVALUATION_ELEMENTS, MAX_MATRIX_ELEMENTS } from '@/services/math/size-guard.js';
 
@@ -261,10 +262,10 @@ export const calculateTool = tool('calculate', {
 
   format: (output) => {
     const lines = [
-      `**Expression:**${labeled(output.expression)}`,
+      `**Expression:** ${escapeMarkdownInline(output.expression)}`,
       `**Operation:** ${output.operation}`,
-      `**Result:**${labeled(output.result)}`,
-      `**Type:** ${output.resultType}`,
+      `**Result:** ${escapeMarkdownInline(output.result)}`,
+      `**Type:** ${escapeMarkdownInline(output.resultType)}`,
     ];
     if (output.unchanged !== undefined) {
       // Present only for simplify — unchanged: true means the simplifier made no progress.
@@ -277,7 +278,7 @@ export const calculateTool = tool('calculate', {
     // Symbolic operations ignore scope and precision, so only evaluate reports them.
     if (output.operation === 'evaluate') {
       const scopeVars = output.scopeVars?.length
-        ? output.scopeVars.map(literal).join(', ')
+        ? output.scopeVars.map(escapeMarkdownInline).join(', ')
         : 'none';
       lines.push(`**Scope variables:** ${scopeVars}`);
       lines.push(`**Precision:** ${output.precisionUsed ?? 'full'}`);
@@ -285,39 +286,3 @@ export const calculateTool = tool('calculate', {
     return [{ type: 'text', text: lines.join('\n') }];
   },
 });
-
-/** Length of the longest run of consecutive backticks in `value` (0 when it has none). */
-function longestBacktickRun(value: string): number {
-  return Math.max(0, ...(value.match(/`+/g) ?? []).map((run) => run.length));
-}
-
-/**
- * Render caller-influenced text so a CommonMark reader sees it byte-for-byte:
- * a code span whose fence is one backtick longer than the value's longest
- * backtick run, space-padded when the value starts or ends with a backtick or
- * space (CommonMark strips one padding space from each side). A value made only
- * of spaces is never stripped, so it goes unpadded; an empty value cannot be a
- * code span and renders as a plain marker. A value with a line break goes in a
- * fenced block on its own lines, sized the same way. No backslash escaping:
- * `*`, `_`, `^`, and `[` are math syntax and must survive a copy. CommonMark
- * normalizes a carriage return to a line feed, so a value holding one (only an
- * expression or scope key can — math.js escapes it in results) reads back with
- * `\n` in its place; `structuredContent` keeps the exact bytes.
- */
-function literal(value: string): string {
-  if (value === '') return '(empty)';
-  const run = longestBacktickRun(value);
-  if (/[\r\n]/.test(value)) {
-    const fence = '`'.repeat(Math.max(3, run + 1));
-    return `\n${fence}\n${value}\n${fence}\n`;
-  }
-  const fence = '`'.repeat(run + 1);
-  const pad = /^[` ]|[` ]$/.test(value) && !/^ +$/.test(value) ? ' ' : '';
-  return `${fence}${pad}${value}${pad}${fence}`;
-}
-
-/** A labeled value: a code span after the label, or a fenced block below it. */
-function labeled(value: string): string {
-  const rendered = literal(value);
-  return rendered.startsWith('\n') ? rendered.slice(0, -1) : ` ${rendered}`;
-}

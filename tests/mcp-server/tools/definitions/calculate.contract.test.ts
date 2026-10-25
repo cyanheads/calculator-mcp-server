@@ -8,6 +8,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { getServerConfig } from '@/config/server-config.js';
 import { calculateTool } from '@/mcp-server/tools/definitions/calculate.tool.js';
 import { initMathService } from '@/services/math/math-service.js';
+import { markdownText } from '../../../helpers/markdown.js';
 
 beforeAll(() => initMathService(getServerConfig()));
 
@@ -15,10 +16,12 @@ type ToolInput = Parameters<typeof runToolContract<typeof calculateTool>>[1];
 
 /** The text blocks of a result, joined. */
 function textOf(result: Awaited<ReturnType<typeof runToolContract>>): string {
-  return result.content
-    .filter((block) => block.type === 'text')
-    .map((block) => block.text)
-    .join('\n');
+  return markdownText(
+    result.content
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text)
+      .join('\n'),
+  );
 }
 
 /** The declared recovery hint for a reason, read from the tool's own contract. */
@@ -73,7 +76,7 @@ describe('calculate response contract', () => {
     const result = await runToolContract(calculateTool, { expression });
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({ result: expected, resultType: 'Unit' });
-    expect(textOf(result)).toContain(`**Result:** \`${expected}\``);
+    expect(textOf(result)).toContain(`Result: ${expected}`);
   });
 
   it('mirrors domain validation and recovery instructions', async () => {
@@ -191,8 +194,8 @@ describe('calculate response contract', () => {
       expect(result.isError).not.toBe(true);
       expect(result.structuredContent).toMatchObject({ result: expected, resultType });
       const text = textOf(result);
-      expect(text).toContain(`**Result:** \`${expected}\``);
-      expect(text).toContain(`**Type:** ${resultType}`);
+      expect(text).toContain(`Result: ${expected}`);
+      expect(text).toContain(`Type: ${resultType}`);
     },
   );
 
@@ -239,46 +242,31 @@ describe('calculate response contract', () => {
     });
 
     it.each([
-      ['"a`b"', '``"a`b"``'],
-      ['"[click](https://example.com)"', '`"[click](https://example.com)"`'],
-      ['"<script>alert(1)</script>"', '`"<script>alert(1)</script>"`'],
-      ['["<b>x</b>", "[l](u)"]', '`["<b>x</b>", "[l](u)"]`'],
-      ['{a: "<i>"}', '`{"a": "<i>"}`'],
-    ])('renders %s with its structured result inside a code span', async (expression, span) => {
+      ['"a`b"', '"a`b"'],
+      ['"[click](https://example.com)"', '"[click](https://example.com)"'],
+      ['"<script>alert(1)</script>"', '"<script>alert(1)</script>"'],
+      ['["<b>x</b>", "[l](u)"]', '["<b>x</b>", "[l](u)"]'],
+      ['{a: "<i>"}', '{"a": "<i>"}'],
+      [
+        'sparse([1, 0; 0, 1])',
+        'Sparse Matrix [2 x 2] density: 0.5\n\n    (0, 0) ==> 1\n    (1, 1) ==> 1',
+      ],
+      ['"a\nb"', '"a\\nb"'],
+    ])('renders %s literally through CommonMark on the wire', async (expression, expected) => {
       const result = await runToolContract(calculateTool, { expression });
-      const { result: value } = result.structuredContent as { result: string };
-      expect(span).toContain(value);
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({ result: expected, expression });
       const text = textOf(result);
-      expect(text).toContain(`\n**Result:** ${span}\n`);
-      expect(text).not.toContain(`**Result:** ${value}`);
+      expect(text).toContain(`Expression: ${expression}\nOperation:`);
+      expect(text).toContain(`\nResult: ${expected}\nType:`);
     });
 
-    it('renders the backtick expression in a sized span', async () => {
-      const result = await runToolContract(calculateTool, { expression: '"a`b"' });
-      expect(textOf(result)).toMatch(/^\*\*Expression:\*\* ``"a`b"``\n/);
-    });
-
-    it('renders each scope key in its own span', async () => {
+    it('renders each scope key literally through CommonMark', async () => {
       const result = await runToolContract(calculateTool, {
         expression: '1 + 1',
         scope: { '<img src=x>': 1, 'a`b': 2 },
       });
-      expect(textOf(result)).toContain('**Scope variables:** `<img src=x>`, ``a`b``\n');
-    });
-
-    it('renders a SparseMatrix result in a fenced block', async () => {
-      const result = await runToolContract(calculateTool, { expression: 'sparse([1, 0; 0, 1])' });
-      const { result: value } = result.structuredContent as { result: string };
-      expect(textOf(result)).toContain(
-        `**Result:**\n\`\`\`\n${value}\n\`\`\`\n**Type:** SparseMatrix`,
-      );
-    });
-
-    it('renders an expression holding a line break in a fenced block', async () => {
-      const expression = '"a\nb"';
-      const result = await runToolContract(calculateTool, { expression });
-      expect(result.isError).not.toBe(true);
-      expect(textOf(result)).toMatch(/^\*\*Expression:\*\*\n```\n"a\nb"\n```\n\*\*Operation:\*\*/);
+      expect(textOf(result)).toContain('Scope variables: <img src=x>, a`b\n');
     });
 
     it('leaves scope and precision lines out of derivative output', async () => {
@@ -290,7 +278,7 @@ describe('calculate response contract', () => {
         precision: 4,
       });
       const text = textOf(result);
-      expect(text).toContain('**Result:** `2 * y * x`');
+      expect(text).toContain('Result: 2 * y * x');
       expect(text).not.toContain('Scope variables');
       expect(text).not.toContain('Precision');
     });
@@ -301,7 +289,7 @@ describe('calculate response contract', () => {
     const result = await runToolContract(calculateTool, { expression: '(y = 2) + x', scope });
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({ result: '3', scopeVars: ['x'] });
-    expect(textOf(result)).toContain('**Scope variables:** `x`\n');
+    expect(textOf(result)).toContain('Scope variables: x\n');
     expect(scope).toEqual({ x: 1 });
   });
 

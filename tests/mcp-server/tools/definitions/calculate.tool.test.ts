@@ -9,6 +9,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { getServerConfig } from '@/config/server-config.js';
 import { calculateTool } from '@/mcp-server/tools/definitions/calculate.tool.js';
 import { initMathService, MathService } from '@/services/math/math-service.js';
+import { markdownText } from '../../../helpers/markdown.js';
 
 function parse(input: Record<string, unknown>) {
   return calculateTool.input.parse(input);
@@ -335,19 +336,47 @@ describe('calculate tool', () => {
   });
 
   describe('format', () => {
-    it('renders omitted context fields as none/full', () => {
+    it.each([
+      '"a`b"',
+      '"a``b"',
+      '"a```b"',
+      '"a`b``c```d"',
+      '`lead',
+      'trail`',
+      '``both``',
+      ' lead',
+      'trail ',
+      '  ',
+      '',
+      '"[click](https://example.com)"',
+      '"<script>alert(1)</script>"',
+      '["<b>x</b>", "[l](u)"]',
+      '{"a": {"b": ["<i>", "*x*"]}}',
+      '5 * x_1^2',
+      'a\n````\nb',
+      '"a\nb"',
+      '"a\r```b"',
+      'Sparse Matrix [2 x 2] density: 0.5\n\n    (0, 0) ==> 1\n    (1, 1) ==> 1',
+      '\t leading and trailing \t',
+      'ends with newline\n',
+      '&copy; &#123; \\',
+      '# heading\n- list\n> quote\n---',
+    ])('preserves %j through a CommonMark parse in every string field', (value) => {
       const formatted = calculateTool.format?.({
-        result: '42',
-        resultType: 'number',
-        expression: '6 * 7',
+        result: value,
+        resultType: value,
+        expression: value,
         operation: 'evaluate',
+        scopeVars: [value],
       });
-      expect(formatted).toEqual([
-        {
-          type: 'text',
-          text: '**Expression:** `6 * 7`\n**Operation:** evaluate\n**Result:** `42`\n**Type:** number\n**Scope variables:** none\n**Precision:** full',
-        },
-      ]);
+      expect(formatted).toHaveLength(1);
+      const block = formatted?.[0];
+      if (block?.type !== 'text') throw new Error('Expected a text block');
+      const literal = value.replace(/\r\n?/g, '\n');
+      const field = literal === '' ? '' : ` ${literal}`;
+      expect(markdownText(block.text)).toBe(
+        `Expression:${field}\nOperation: evaluate\nResult:${field}\nType:${field}\nScope variables:${field}\nPrecision: full`,
+      );
     });
 
     it('renders active scope variables and applied precision', () => {
@@ -359,96 +388,34 @@ describe('calculate tool', () => {
         scopeVars: ['x', 'y'],
         precisionUsed: 4,
       });
-      expect(formatted).toEqual([
-        {
-          type: 'text',
-          text: '**Expression:** `x^2 + y`\n**Operation:** evaluate\n**Result:** `11`\n**Type:** number\n**Scope variables:** `x`, `y`\n**Precision:** 4',
-        },
-      ]);
+      const block = formatted?.[0];
+      if (block?.type !== 'text') throw new Error('Expected a text block');
+      expect(markdownText(block.text)).toBe(
+        'Expression: x^2 + y\nOperation: evaluate\nResult: 11\nType: number\nScope variables: x, y\nPrecision: 4',
+      );
     });
 
-    /** The text block `format()` renders for an evaluate output with these fields. */
-    function rendered(fields: {
-      expression?: string;
-      result?: string;
-      scopeVars?: string[];
-      operation?: 'evaluate' | 'simplify' | 'derivative';
-    }): string {
-      const { format } = calculateTool;
-      if (!format) throw new Error('calculate defines no format()');
-      const [block] = format({
-        expression: '1',
-        result: '1',
-        resultType: 'string',
+    it('renders omitted scope variables as none', () => {
+      const block = calculateTool.format?.({
+        result: '42',
+        resultType: 'number',
+        expression: '6 * 7',
         operation: 'evaluate',
-        ...fields,
-      });
-      return (block as { text: string }).text;
-    }
-
-    it.each([
-      ['"a`b"', '``"a`b"``'],
-      ['"a``b"', '```"a``b"```'],
-      ['"a```b"', '````"a```b"````'],
-      ['"a`b``c```d"', '````"a`b``c```d"````'],
-      ['`lead', '`` `lead ``'],
-      ['trail`', '`` trail` ``'],
-      ['``both``', '``` ``both`` ```'],
-      [' lead', '`  lead `'],
-      ['trail ', '` trail  `'],
-      ['"[click](https://example.com)"', '`"[click](https://example.com)"`'],
-      ['"<script>alert(1)</script>"', '`"<script>alert(1)</script>"`'],
-      ['["<b>x</b>", "[l](u)"]', '`["<b>x</b>", "[l](u)"]`'],
-      ['{"a": {"b": ["<i>", "*x*"]}}', '`{"a": {"b": ["<i>", "*x*"]}}`'],
-      ['5 * x_1^2', '`5 * x_1^2`'],
-    ])('renders the result %s as the code span %s', (result, span) => {
-      expect(rendered({ result })).toContain(`\n**Result:** ${span}\n`);
+      })[0];
+      if (block?.type !== 'text') throw new Error('Expected a text block');
+      expect(markdownText(block.text)).toContain('Scope variables: none\nPrecision: full');
     });
 
-    it('sizes the expression span the same way and keeps a backtick-free expression byte-identical', () => {
-      expect(rendered({ expression: '"a`b"' })).toMatch(/^\*\*Expression:\*\* ``"a`b"``\n/);
-      expect(rendered({ expression: '2 + 3 * 4' })).toMatch(/^\*\*Expression:\*\* `2 \+ 3 \* 4`\n/);
-    });
-
-    it('renders each scope-variable name as its own code span', () => {
-      expect(rendered({ scopeVars: ['<img src=x>', 'a`b', '[l](u)', 'x'] })).toContain(
-        '\n**Scope variables:** `<img src=x>`, ``a`b``, `[l](u)`, `x`\n',
-      );
-    });
-
-    it('renders an all-space name unpadded and an empty name as a marker', () => {
-      expect(rendered({ scopeVars: ['  ', ''] })).toContain(
-        '\n**Scope variables:** `  `, (empty)\n',
-      );
-    });
-
-    it('puts a multi-line result in a fenced block sized past its longest backtick run', () => {
-      const sparse = 'Sparse Matrix [2 x 2] density: 0.5\n\n    (0, 0) ==> 1\n    (1, 1) ==> 1';
-      expect(rendered({ result: sparse })).toContain(
-        `\n**Result:**\n\`\`\`\n${sparse}\n\`\`\`\n**Type:** string\n`,
-      );
-      expect(rendered({ result: 'a\n````\nb' })).toContain(
-        '\n**Result:**\n`````\na\n````\nb\n`````\n**Type:**',
-      );
-    });
-
-    it('puts a multi-line expression in a fenced block', () => {
-      expect(rendered({ expression: '"a\nb"' })).toMatch(
-        /^\*\*Expression:\*\*\n```\n"a\nb"\n```\n/,
-      );
-    });
-
-    it('puts a value holding a lone carriage return in a fenced block unchanged', () => {
-      // CommonMark reads the CR as a line ending; the fence keeps it from closing early.
-      expect(rendered({ expression: '"a\r```b"' })).toMatch(
-        /^\*\*Expression:\*\*\n````\n"a\r```b"\n````\n/,
-      );
-    });
-
-    it('omits the scope and precision lines for derivative', () => {
-      const text = rendered({ operation: 'derivative', result: '2 * x' });
-      expect(text).toBe(
-        '**Expression:** `1`\n**Operation:** derivative\n**Result:** `2 * x`\n**Type:** string',
+    it('omits scope and precision lines for derivative', () => {
+      const block = calculateTool.format?.({
+        result: '2 * x',
+        resultType: 'string',
+        expression: 'x^2',
+        operation: 'derivative',
+      })[0];
+      if (block?.type !== 'text') throw new Error('Expected a text block');
+      expect(markdownText(block.text)).toBe(
+        'Expression: x^2\nOperation: derivative\nResult: 2 * x\nType: string',
       );
     });
   });

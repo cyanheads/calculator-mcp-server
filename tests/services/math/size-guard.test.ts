@@ -23,18 +23,19 @@ function evaluate(expression: string, numericType: NumericType = 'number') {
   return getMathService().evaluateExpression(expression, undefined, undefined, numericType);
 }
 
-/** Evaluate expecting a failure; return the error and how long the call took. */
+/** Evaluate expecting a failure; measure executing-thread CPU rather than host scheduling delay. */
 function timedFailure(expression: string, numericType: NumericType = 'number') {
-  const started = performance.now();
+  const started = process.threadCpuUsage();
   let caught: unknown;
   try {
     evaluate(expression, numericType);
   } catch (err) {
     caught = err;
   }
-  const elapsedMs = performance.now() - started;
+  const usage = process.threadCpuUsage(started);
+  const cpuMs = (usage.user + usage.system) / 1000;
   expect(caught, `expected "${expression}" to fail`).toBeInstanceOf(McpError);
-  return { error: caught as McpError, elapsedMs };
+  return { error: caught as McpError, cpuMs };
 }
 
 beforeAll(() => {
@@ -88,10 +89,10 @@ describe('oversized constructions are rejected before allocating', () => {
     ['hex(bignumber("1e1000000000"))', 'hex()'],
     ['bin(bignumber("1e1000000000"))', 'bin()'],
   ])('rejects %s', (expression, fn) => {
-    const { error, elapsedMs } = timedFailure(expression);
+    const { error, cpuMs } = timedFailure(expression);
     expect(error.data?.reason).toBe('result_too_large');
     expect(error.message).toContain(fn);
-    expect(elapsedMs).toBeLessThan(1500);
+    expect(cpuMs).toBeLessThan(1500);
   });
 
   it.each(['BigNumber', 'Fraction'] as const)(
@@ -200,10 +201,10 @@ describe('per-evaluation element budget', () => {
   });
 
   it('stops a loop that accumulates allocations', () => {
-    const { error, elapsedMs } = timedFailure(accumulating);
+    const { error, cpuMs } = timedFailure(accumulating);
     expect(error.data?.reason).toBe('result_too_large');
     expect(error.message).toContain('20,000,000 elements');
-    expect(elapsedMs).toBeLessThan(1500);
+    expect(cpuMs).toBeLessThan(1500);
   });
 
   it('lets a large scalar loop finish', () => {
@@ -237,22 +238,23 @@ describe('per-evaluation element budget', () => {
   });
 
   it('stops repeated copies that no single call builds', () => {
-    const { error, elapsedMs } = timedFailure(
+    const { error, cpuMs } = timedFailure(
       "size([A = range(1, 1e6), A', A', A', A', A', A', A', A', A', A'])",
     );
     expect(error.data?.reason).toBe('result_too_large');
     expect(error.message).toContain('20,000,000 elements');
-    expect(elapsedMs).toBeLessThan(1500);
+    expect(cpuMs).toBeLessThan(1500);
   });
 
-  it('lets chained full-size vector arithmetic finish', () => {
-    expect(evaluate('sum((range(1, 1e6) .^ 2) .* range(1, 1e6))', 'BigNumber').result).toBe(
-      '2.5000050000025e+23',
-    );
-    expect(evaluate('sum(((r = range(1, 1e6)) .^ 2 + r .* 3 - r) ./ 2)').result).toBe(
-      '166667416667013900',
-    );
-  });
+  it.each([
+    ['BigNumber', 'sum((range(1, 1e6) .^ 2) .* range(1, 1e6))', '2.5000050000025e+23'],
+    ['number', 'sum(((r = range(1, 1e6)) .^ 2 + r .* 3 - r) ./ 2)', '166667416667013900'],
+  ] as const)(
+    'lets chained full-size %s vector arithmetic finish',
+    (numericType, expression, result) => {
+      expect(evaluate(expression, numericType).result).toBe(result);
+    },
+  );
 
   it('allows nine chained operations on a full-size range and rejects the tenth', () => {
     // The range and each sum are charged twice: by the guarded call and by its node.
@@ -285,10 +287,10 @@ describe('functions whose output can outgrow their inputs', () => {
     ['size(map(transpose([range(1, 2000)]), range(1, 2000), add))', 'map()'],
     ['size(map(transpose([range(1, 2000)]), range(1, 2000), f(a, b) = a))', 'map()'],
   ])('rejects %s before building it', (expression, fn) => {
-    const { error, elapsedMs } = timedFailure(expression);
+    const { error, cpuMs } = timedFailure(expression);
     expect(error.data?.reason).toBe('result_too_large');
     expect(error.message).toContain(fn);
-    expect(elapsedMs).toBeLessThan(1500);
+    expect(cpuMs).toBeLessThan(1500);
   });
 
   it('keeps the broadcasting forms of map working within the limit', () => {
@@ -329,8 +331,9 @@ describe('guarded functions keep their math.js behavior', () => {
 
   it('constant folding in simplify hits the same limit and leaves the call', () => {
     const svc = getMathService();
-    const started = performance.now();
+    const started = process.threadCpuUsage();
     expect(svc.simplifyExpression('zeros(5000, 5000)').result).toBe('zeros(5000, 5000)');
-    expect(performance.now() - started).toBeLessThan(1500);
+    const usage = process.threadCpuUsage(started);
+    expect((usage.user + usage.system) / 1000).toBeLessThan(1500);
   });
 });
