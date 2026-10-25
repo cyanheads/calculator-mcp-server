@@ -6,7 +6,7 @@
     "url": "https://github.com/cyanheads/calculator-mcp-server",
     "source": "github"
   },
-  "version": "0.5.1",
+  "version": "0.5.2",
   "remotes": [
     {
       "type": "streamable-http",
@@ -19,7 +19,7 @@
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cyanheads/calculator-mcp-server",
       "runtimeHint": "npx",
-      "version": "0.5.1",
+      "version": "0.5.2",
       "environmentVariables": [
         {
           "name": "CALC_MAX_EXPRESSION_LENGTH",
@@ -59,7 +59,7 @@
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cyanheads/calculator-mcp-server",
       "runtimeHint": "npx",
-      "version": "0.5.1",
+      "version": "0.5.2",
       "environmentVariables": [
         {
           "name": "MCP_TRANSPORT_TYPE",
