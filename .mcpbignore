@@ -2,6 +2,8 @@
 .mcpregistry_*
 /.claude/
 /.agents/
+/.gemini/
+/node_modules/.vitest-cache/
 /framework-skills/
 /logs/
 /.cache/
@@ -19,3 +21,13 @@
 /biome.json
 /tsconfig*.json
 /vitest.config.ts
+/changelog/
+/.claude-plugin/
+/.codex-plugin/
+/plugin.json
+/mcp.json
+/CLAUDE.md
+/AGENTS.md
+/.dockerignore
+/.gitattributes
+/devcheck.config.json

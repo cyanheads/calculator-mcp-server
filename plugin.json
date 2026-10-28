@@ -1,0 +1,28 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "calculator-mcp-server",
+  "version": "0.5.2",
+  "description": "Evaluate, simplify, and differentiate mathematical expressions via MCP. STDIO or Streamable HTTP.",
+  "author": {
+    "name": "Casey Hand",
+    "email": "casey@caseyjhand.com",
+    "url": "https://caseyjhand.com"
+  },
+  "homepage": "https://github.com/cyanheads/calculator-mcp-server#readme",
+  "repository": "https://github.com/cyanheads/calculator-mcp-server",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "calculator",
+    "math",
+    "mathjs",
+    "llm-tools",
+    "typescript",
+    "cyanheads",
+    "bun",
+    "stdio",
+    "streamable-http"
+  ]
+}
