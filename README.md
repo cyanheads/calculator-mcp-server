@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.5.2-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/calculator-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.3.1-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/calculator-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/calculator-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.4-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.5.2-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/calculator-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.4.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/calculator-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/calculator-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.4-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -83,129 +83,32 @@ Agent-friendly output:
 
 ## Getting started
 
-### Public Hosted Instance
-
-A public instance is available at `https://calculator.caseyjhand.com/mcp` — no installation required. It serves Streamable HTTP; each client takes its own config shape.
-
-For Claude Code:
+Connect to the hosted instance, no install:
 
 ```sh
 claude mcp add --transport http calculator-mcp-server https://calculator.caseyjhand.com/mcp
 ```
 
-For Cline (`cline_mcp_settings.json`):
+Or run it locally:
 
-```json
-{
-  "mcpServers": {
-    "calculator-mcp-server": {
-      "type": "streamableHttp",
-      "url": "https://calculator.caseyjhand.com/mcp"
-    }
-  }
-}
+```sh
+claude mcp add calculator-mcp-server -- npx -y @cyanheads/calculator-mcp-server
 ```
 
-For Cursor (`mcp.json`):
+For other clients, add this to the MCP config file:
 
 ```json
 {
   "mcpServers": {
     "calculator-mcp-server": {
-      "url": "https://calculator.caseyjhand.com/mcp"
-    }
-  }
-}
-```
-
-Claude Desktop adds remote servers under Settings → Connectors.
-
-### Self-Hosted / Local
-
-Add one of the following to your MCP client configuration file:
-
-```json
-{
-  "mcpServers": {
-    "calculator-mcp-server": {
-      "type": "stdio",
-      "command": "bunx",
-      "args": ["@cyanheads/calculator-mcp-server@latest"],
-      "env": {
-        "MCP_TRANSPORT_TYPE": "stdio",
-        "MCP_LOG_LEVEL": "info"
-      }
-    }
-  }
-}
-```
-
-Or with npx (no Bun required):
-
-```json
-{
-  "mcpServers": {
-    "calculator-mcp-server": {
-      "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@cyanheads/calculator-mcp-server@latest"],
-      "env": {
-        "MCP_TRANSPORT_TYPE": "stdio",
-        "MCP_LOG_LEVEL": "info"
-      }
+      "args": ["-y", "@cyanheads/calculator-mcp-server"]
     }
   }
 }
 ```
 
-Or with Docker:
-
-```json
-{
-  "mcpServers": {
-    "calculator-mcp-server": {
-      "type": "stdio",
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "-e", "MCP_TRANSPORT_TYPE=stdio",
-        "ghcr.io/cyanheads/calculator-mcp-server:latest"
-      ]
-    }
-  }
-}
-```
-
-For Streamable HTTP, set the transport and start the built server:
-
-```sh
-MCP_HTTP_PORT=3010 bun run start:http
-# Server listens at http://localhost:3010/mcp
-```
-
-### Prerequisites
-
-- [Bun v1.4.0](https://bun.sh/) or higher
-
-### Installation
-
-1. **Clone the repository:**
-
-```sh
-git clone https://github.com/cyanheads/calculator-mcp-server.git
-```
-
-2. **Navigate into the directory:**
-
-```sh
-cd calculator-mcp-server
-```
-
-3. **Install dependencies:**
-
-```sh
-bun install
-```
+For Docker or a source build, see [Running the server](#running-the-server).
 
 ## Configuration
 
@@ -229,6 +132,15 @@ See [`.env.example`](./.env.example) for optional session, resumability, logging
 
 ### Local development
 
+Requires [Bun v1.4.0](https://bun.sh/) or higher. The built server also runs on Node.js v24+.
+
+- **Clone and install:**
+  ```sh
+  git clone https://github.com/cyanheads/calculator-mcp-server.git
+  cd calculator-mcp-server && bun install
+  cp .env.example .env
+  ```
+
 - **Build and run the production version:**
   ```sh
   bun run build
@@ -244,11 +156,10 @@ See [`.env.example`](./.env.example) for optional session, resumability, logging
 ### Docker
 
 ```sh
-docker build -t calculator-mcp-server .
-docker run -p 3010:3010 calculator-mcp-server
+docker run --rm -p 3010:3010 ghcr.io/cyanheads/calculator-mcp-server:latest
 ```
 
-The image defaults to Streamable HTTP on port `3010`, stateless sessions, and logs at `/var/log/calculator-mcp-server`. OpenTelemetry dependencies are installed by default; build with `--build-arg OTEL_ENABLED=false` to omit them.
+The image defaults to Streamable HTTP on port `3010`, stateless sessions, and logs at `/var/log/calculator-mcp-server`. For stdio, use `docker run -i --rm -e MCP_TRANSPORT_TYPE=stdio ghcr.io/cyanheads/calculator-mcp-server:latest`. To build locally, run `docker build -t calculator-mcp-server .`; OpenTelemetry dependencies are installed by default, and `--build-arg OTEL_ENABLED=false` omits them.
 
 ## Project structure
 
