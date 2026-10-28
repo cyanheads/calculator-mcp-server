@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.5.3](changelog/0.5.x/0.5.3.md) — 2026-10-28
+
+HTTP request cleanup and desktop bundle packaging.
+
 ## [0.5.2](changelog/0.5.x/0.5.2.md) — 2026-10-25
 
 Framework Markdown formatting and dependency refresh.

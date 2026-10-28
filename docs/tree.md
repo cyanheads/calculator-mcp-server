@@ -1,6 +1,6 @@
 # calculator-mcp-server - Directory Structure
 
-Generated on: 2026-10-25 09:25:23
+Generated on: 2026-10-28 07:11:10
 
 ```text
 calculator-mcp-server/
@@ -40,6 +40,8 @@ calculator-mcp-server/
 │   ├── add-resource/
 │   │   └── SKILL.md
 │   ├── add-service/
+│   │   └── SKILL.md
+│   ├── add-skill/
 │   │   └── SKILL.md
 │   ├── add-test/
 │   │   └── SKILL.md
@@ -170,6 +172,8 @@ calculator-mcp-server/
 │   │       └── definitions/
 │   │           ├── calculate.contract.test.ts
 │   │           └── calculate.tool.test.ts
+│   ├── scripts/
+│   │   └── mcpb-agent-docs.test.ts
 │   └── services/
 │       └── math/
 │           ├── math-service.test.ts
@@ -189,7 +193,9 @@ calculator-mcp-server/
 ├── Dockerfile
 ├── LICENSE
 ├── manifest.json
+├── mcp.json
 ├── package.json
+├── plugin.json
 ├── README.md
 ├── server.json
 ├── tsconfig.build.json
