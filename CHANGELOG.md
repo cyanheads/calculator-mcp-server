@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.6.0](changelog/0.6.x/0.6.0.md) — 2026-11-12 · ⚠️ Breaking · 🛡️ Security
+
+Date arithmetic, numeric integrals, exact Fraction combinatorics and roots, operator spellings from Python and typeset math, and a published calculator-guide skill. Breaking: BigNumber scope values, zero averaging dimensions, oversized ranges and sequence indexes, and other calls that returned a result now fail.
+
 ## [0.5.3](changelog/0.5.x/0.5.3.md) — 2026-10-28
 
 HTTP request cleanup and desktop bundle packaging.

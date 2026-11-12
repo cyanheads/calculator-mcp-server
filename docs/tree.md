@@ -1,6 +1,6 @@
 # calculator-mcp-server - Directory Structure
 
-Generated on: 2026-10-28 07:11:10
+Generated on: 2026-11-12 15:13:44
 
 ```text
 calculator-mcp-server/
@@ -29,6 +29,7 @@ calculator-mcp-server/
 │   ├── 0.3.x/
 │   ├── 0.4.x/
 │   ├── 0.5.x/
+│   ├── 0.6.x/
 │   └── template.md
 ├── claude-plans/
 ├── docs/
@@ -143,6 +144,9 @@ calculator-mcp-server/
 │   ├── split-changelog.ts
 │   ├── tree.ts
 │   └── update-coverage.ts
+├── skills/
+│   └── calculator-guide/
+│       └── SKILL.md
 ├── src/
 │   ├── config/
 │   │   └── server-config.ts
@@ -155,7 +159,14 @@ calculator-mcp-server/
 │   │           └── calculate.tool.ts
 │   ├── services/
 │   │   └── math/
+│   │       ├── date-functions.ts
+│   │       ├── fraction-exact.ts
+│   │       ├── function-names.ts
+│   │       ├── help-content.ts
+│   │       ├── integrate.ts
+│   │       ├── math-instance.ts
 │   │       ├── math-service.ts
+│   │       ├── notation.ts
 │   │       ├── size-guard.ts
 │   │       └── types.ts
 │   └── index.ts
@@ -176,7 +187,14 @@ calculator-mcp-server/
 │   │   └── mcpb-agent-docs.test.ts
 │   └── services/
 │       └── math/
+│           ├── fixtures/
+│           │   └── python-dates.json
+│           ├── date-functions.test.ts
+│           ├── fraction-exact.test.ts
+│           ├── function-names.test.ts
+│           ├── integrate.test.ts
 │           ├── math-service.test.ts
+│           ├── notation.test.ts
 │           └── size-guard.test.ts
 ├── .dockerignore
 ├── .env.example
