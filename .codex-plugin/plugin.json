@@ -15,7 +15,7 @@
   "interface": {
     "displayName": "calculator-mcp-server",
     "shortDescription": "Evaluate, simplify, and differentiate mathematical expressions via MCP. STDIO or Streamable HTTP.",
-    "longDescription": "A hardened math.js calculator MCP server that lets any LLM verify mathematical computations. Supports arithmetic, algebra, trigonometry, logarithms, statistics, matrices, complex numbers, combinatorics, and unit conversion. No auth required — all operations are read-only and stateless.",
+    "longDescription": "A hardened math.js calculator MCP server that lets any LLM verify mathematical computations. Supports arithmetic, algebra, trigonometry, logarithms, statistics, matrices and linear systems, polynomial roots, complex numbers, combinatorics, unit conversion, calendar dates, and numeric definite integrals. No auth required — all operations are read-only and stateless.",
     "developerName": "cyanheads",
     "category": "tools",
     "capabilities": ["Read"],

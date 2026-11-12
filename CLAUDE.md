@@ -2,8 +2,8 @@
 
 **Server:** calculator-mcp-server
 **Version:** 0.5.3
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.18`
-**Engines:** Bun ≥1.4.0, Node ≥24.0.0
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.22`
+**Engines:** Bun ≥1.4.4, Node ≥24.0.0
 **MCP SDK:** `@modelcontextprotocol/server` ^2.4.0
 **Zod:** 4.6.7
 
@@ -20,7 +20,7 @@ A publicly-hosted calculator MCP server that lets any LLM verify mathematical co
 
 ### Security Model
 
-MathService wraps a **hardened math.js instance** — dangerous functions (`import`, `createUnit`, `evaluate`, `parse`, `compile`, `chain`, `resolve`, `reviver`, `parser`) are disabled in the expression scope. `simplify` and `derivative` are also disabled in expressions but called programmatically by the tool handler; a call to `evaluate`, `simplify`, or `derivative` inside an expression is rejected at parse time (`operation_as_function`). `config` is a read-only guard in every numeric mode: a bare `config()` read returns a fresh copy of the config object, so an assignment into it never reaches a later call, and any write throws. Each expression is parsed once and the tree is checked before anything evaluates: multiple statements (a top-level `BlockNode` — `;` or a newline outside brackets, parentheses, and either quote style) are rejected, and `.toString()` / `.toLocaleString()` access on any value is rejected — these method calls on function-valued identifiers would otherwise bypass the result-type guard by returning source as a plain string. Evaluation, result inspection, and formatting all run under a `vm` timeout (one reused context, `Script.runInContext()`). Input length is capped. Variable scope accepts `z.record(z.number())` only with prototype-polluting keys blocked. Result types are validated (functions, parsers, result sets, and `help()` objects rejected). Functions that build a collection or string from a size argument, a product, a broadcast, a repeated input (`concat(A, A)`), an index that reads or grows a matrix, or a formatting precision are capped per call (`size-guard.ts`: `MAX_MATRIX_ELEMENTS`, `MAX_STRING_LENGTH`), and each evaluation has an element budget (`MAX_EVALUATION_ELEMENTS`) charged by every guarded call and every value-building node of the parse tree, loop bodies included. Result size is capped via `CALC_MAX_RESULT_LENGTH`; a collection with more elements than can fit is rejected before it is formatted. The math.js `version` constant is redacted to prevent fingerprinting.
+MathService wraps a **hardened math.js instance** — dangerous functions (`import`, `createUnit`, `evaluate`, `parse`, `compile`, `chain`, `resolve`, `reviver`, `parser`) are disabled in the expression scope. `simplify` and `derivative` are also disabled in expressions but called programmatically by the tool handler; a call to `evaluate`, `simplify`, or `derivative` inside an expression is rejected at parse time (`operation_as_function`). `config` is a read-only guard in every numeric mode: a bare `config()` read returns a fresh copy of the config object, so an assignment into it never reaches a later call, and any write throws. Each expression is parsed once and the tree is checked before anything evaluates: multiple statements (a top-level `BlockNode` — `;` or a newline outside brackets, parentheses, and either quote style) are rejected, and `.toString()` / `.toLocaleString()` access on any value is rejected — these method calls on function-valued identifiers would otherwise bypass the result-type guard by returning source as a plain string. Before that parse, one linear scan (`notation.ts`) reads `**`, `×`, `÷`, `−`, and `°` outside string literals and `#` comments as math.js operators; the length cap applies to the caller's text and every tree check to the parsed rewrite. The tree walk renames synonym calls (`avg`, `nCr`, `eig`, `integral`, …; `function-names.ts`) to their canonical function, so a synonym reaches the same transform, guards, and exact Fraction override, and under `evaluate` it rejects `now()` and `today()`: no function reads a clock or keeps state between calls. Evaluation, result inspection, and formatting all run under a `vm` timeout (one reused context, `Script.runInContext()`). A call-stack overflow anywhere the service recurses over the expression (parse, tree walk, the timed call, printing) fails as `expression_too_deep`, never an internal error. Input length is capped (`CALC_MAX_EXPRESSION_LENGTH`, default 4,000). Variable scope accepts `z.record(z.number())` only with prototype-polluting keys blocked. Result types are validated (functions, parsers, result sets, and `help()` objects rejected). Functions that build a collection or string from a size argument, a product, a broadcast, a repeated input (`concat(A, A)`), an index that reads or grows a matrix, or a formatting precision are capped per call (`size-guard.ts`: `MAX_MATRIX_ELEMENTS`, `MAX_STRING_LENGTH`), and each evaluation has an element budget (`MAX_EVALUATION_ELEMENTS`) charged by every guarded call and every value-building node of the parse tree, loop bodies included. `range` counts the elements it would build from the step direction and the end flag. `stirlingS2` and `bellNumbers` take n up to 1,412 (314 with a BigNumber argument) and `bernoulli` an even n up to 1,000, which bounds the tables they build. Under numericType Fraction, an exact factorial, binomial, or power (`fraction-exact.ts`) estimates its digits and fails past `MAX_STRING_LENGTH` before computing; factorials, binomials, roots, and powers taken through a root also charge those digits to the evaluation budget. `integrate(f, x, a, b)` is a raw-argument function: it compiles the parsed integrand node itself, never a copy, so per-node element metering stays on it, and samples it in a child scope over the caller's. Each call makes at most 500 subintervals (14,985 samples); collections a sample builds count against `MAX_EVALUATION_ELEMENTS`, and scalar samples, nested integrals included, are bounded by the evaluation timeout. Result size is capped via `CALC_MAX_RESULT_LENGTH`; a collection with more elements than can fit is rejected before it is formatted. The math.js `version` constant is redacted to prevent fingerprinting.
 
 ---
 
@@ -125,8 +125,11 @@ export const helpResource = resource('calculator://help', {
 import { z } from '@cyanheads/mcp-ts-core';
 import { parseEnvConfig } from '@cyanheads/mcp-ts-core/config';
 
+/** Exported so the tool description can state it; the definition is built before config parses. */
+export const DEFAULT_MAX_EXPRESSION_LENGTH = 4000;
+
 const ServerConfigSchema = z.object({
-  maxExpressionLength: z.coerce.number().int().min(10).max(10_000).default(1000)
+  maxExpressionLength: z.coerce.number().int().min(10).max(10_000).default(DEFAULT_MAX_EXPRESSION_LENGTH)
     .describe('Maximum allowed expression string length (10–10,000)'),
   evaluationTimeoutMs: z.coerce.number().int().min(100).max(30_000).default(5000)
     .describe('Maximum evaluation time in milliseconds (100–30,000)'),
@@ -146,7 +149,7 @@ export function getServerConfig() {
 
 | Env Var | Default | Description |
 |:--------|:--------|:------------|
-| `CALC_MAX_EXPRESSION_LENGTH` | `1000` | Max input string length |
+| `CALC_MAX_EXPRESSION_LENGTH` | `4000` | Max input string length |
 | `CALC_EVALUATION_TIMEOUT_MS` | `5000` | Evaluation timeout in ms |
 | `CALC_MAX_RESULT_LENGTH` | `100000` | Max result string length |
 
@@ -381,7 +384,7 @@ When you complete a skill's checklist, check the boxes and add a completion time
 
 The MCPB `manifest.json` keeps `author.name: "cyanheads"` as its established display identity. `package.json` uses the full Casey Hand author string; this is an intentional exception to generic author-name synchronization.
 
-`bun run bundle` produces a `.mcpb` extension bundle for one-click install in Claude Desktop. `mcpb pack` reads `.mcpbignore`, not `.gitignore`: exclude each development-only root path with an anchored pattern (`/docs/`, never `docs/`, which also strips dependency paths). Root `skills/` ships when present. `scripts/clean-mcpb.ts` prunes dev dependencies, dependency-shipped agent docs, platform-specific native bindings, node-gyp build output, and build-only package files such as the framework's changelog, templates, scripts, and config bases. Compiled `*.node` addons stay. Inspect the completed archive and run `lint:packaging` after packing and cleaning finish. MCPB is stdio-only. Consumers who do not need bundles can delete `manifest.json` and `.mcpbignore`; packaging checks skip them when absent.
+`bun run bundle` produces a `.mcpb` extension bundle for one-click install in Claude Desktop. `mcpb pack` reads `.mcpbignore`, not `.gitignore`: exclude each development-only root path with an anchored pattern (`/docs/`, never `docs/`, which also strips dependency paths). Root `skills/` ships when present. `scripts/clean-mcpb.ts` prunes dev dependencies, dependency-shipped agent docs (`framework-skills/`, `skills/`, `.claude/`, `.agents/`, `AGENTS.md`, and `CLAUDE.md` at a package's root, and `SKILL.md` anywhere; a `skills/` deeper in a package is runtime code and stays), platform-specific native bindings, node-gyp build output, and build-only package files such as the framework's changelog, templates, scripts, and config bases. Compiled `*.node` addons stay. Inspect the completed archive and run `lint:packaging` after packing and cleaning finish. MCPB is stdio-only. Consumers who do not need bundles can delete `manifest.json` and `.mcpbignore`; packaging checks skip them when absent.
 
 **Adding an env var requires both files:** `server.json` (registry discovery, `environmentVariables[]`) and `manifest.json` (bundle install UX, `mcp_config.env` + `user_config`). `lint:packaging` (run by `devcheck`) verifies the env var names match, that every `user_config` option is wired into `mcp_config.env` as `"X": "${user_config.X}"` (the host substitutes nothing else — `"${X}"` reaches the server as that literal string), and that an optional string option carries `"default": ""`.
 

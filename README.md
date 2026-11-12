@@ -47,19 +47,17 @@ Calculator powered by math.js. Verify numeric results, simplify algebraic expres
 
 ### `calculate` <sub>tool</sub>
 
-- One `expression` per call. `operation` selects `evaluate` (default), `simplify`, or `derivative`; derivatives require `variable` (e.g. `"x"`).
-- Evaluate arithmetic, trigonometry, logarithms, statistics, matrices, complex numbers, units, and combinatorics; assign numeric variables through `scope`, e.g. `{ "x": 5 }`.
-- `numericType` selects `number`, `BigNumber` (64 significant digits, for values that overflow a 64-bit float), or `Fraction` (exact rationals). Fraction mode returns `fraction_unsupported`, with guidance to change numeric type, when a result has no exact rational value (`sqrt(2)`), the expression calls a function Fraction mode cannot compute (`sqrt(4)`, `5!`), or it uses a value Fraction mode holds only as a rounded float (`pi`, `2^(1/2)`).
-- `precision` sets 1–16 significant digits for numeric results. Blank optional `variable` and `precision` values are treated as omitted; scope and precision do not affect symbolic operations.
-- Simplification includes algebraic and trigonometric identities (`2x + 3x` → `5 * x`); `unchanged: true` identifies expressions the simplifier cannot reduce, including polynomial factoring and rational cancellation cases.
-- Returns the result string, result type, original expression, and operation. Validation failures include typed reasons and recovery hints.
+- One `expression` per call, up to 4,000 characters by default. `operation` selects `evaluate` (default), `simplify`, or `derivative` (requires `variable`, e.g. `"x"`); `scope` assigns numeric variables (`{ "x": 5 }`) and `precision` sets 1–16 significant digits, both for `evaluate` only.
+- Covers arithmetic, trigonometry, logarithms, statistics, matrices and linear systems (`lusolve`), polynomial roots (`polynomialRoot`), complex numbers, units, combinatorics, dates as quoted `YYYY-MM-DD` strings (`dateDiff`, `dateAdd`, `weekday`, `isoWeek`, `daysInMonth`), and numeric definite integrals (`integrate(f, x, a, b)`). Accepts `**`, `×`, `÷`, `−`, and `°` (`°C`, `°F`) as math.js operators in every operation; `×` and `**` take scalar operands.
+- `numericType` selects `number`, `BigNumber` (64 significant digits, for values that overflow a 64-bit float), or `Fraction` (exact rationals, including integer combinatorics and rational roots: `5!` → `120/1`). Fraction mode returns `fraction_unsupported` when a result has no exact rational value (`sqrt(2)`, `2^(1/2)`), the expression calls a function Fraction mode cannot compute (`log2(8)`, `stirlingS2(5, 2)`), or it uses a value Fraction mode holds only as a rounded float (`pi`, `random()`).
+- Returns the result string, result type, original expression, and operation; `simplify` sets `unchanged: true` when it cannot reduce the expression (it does no polynomial factoring or rational cancellation). Failures carry a typed `reason` and a recovery hint.
 
 ---
 
 ### `calculator://help` <sub>resource</sub>
 
-- Markdown reference for functions, operators, constants, units, and expression syntax; no parameters.
-- Examples cover scope, matrices, complex numbers, precision, and all three operations.
+- Markdown reference for functions, operators, constants, units, limits, and expression syntax; no parameters.
+- Worked examples cover scope, matrices, polynomial roots, dates, integrals, complex numbers, precision, each `numericType`, and all three operations.
 - Cacheable for 24 hours with public scope (`cacheHint`) — static content that never changes at runtime.
 
 ## Features
@@ -69,10 +67,10 @@ Built on [`@cyanheads/mcp-ts-core`](https://github.com/cyanheads/mcp-ts-core): s
 Calculator-specific:
 
 - Hardened math.js v15 instance — dangerous functions disabled, evaluation run under a `vm` timeout
-- No auth required — all operations are read-only and stateless
-- Input validation: expression length limits and rejection of multiple statements; matrix row separators and string contents remain valid
+- No auth required — all operations are read-only and stateless, and nothing reads a clock (`now()` and `today()` are rejected; pass dates as strings)
+- Input validation: expression length limits and rejection of multiple statements; matrix row separators and string contents remain valid; nesting past the call stack fails with `expression_too_deep`
 - Result validation: blocked result types (functions, parsers, result sets), configurable max result size
-- Size limits: functions that build a matrix or string from a size, product, broadcast, index, or precision argument are capped per call, and each evaluation has a total element budget; oversized requests fail fast with `result_too_large`
+- Size limits: functions that build a matrix, range, or string from a size, product, broadcast, index, or precision argument are capped per call, `stirlingS2`, `bellNumbers`, and `bernoulli` bound their arguments, and each evaluation has a total element budget; oversized requests fail fast with `result_too_large`. `integrate()` uses at most 500 subintervals per call
 - Scope sanitization: numeric-only values, prototype pollution prevention (blocked `__proto__`, `constructor`, etc.)
 
 Agent-friendly output:
@@ -114,7 +112,7 @@ For Docker or a source build, see [Running the server](#running-the-server).
 
 | Variable | Description | Default |
 |:---------|:------------|:--------|
-| `CALC_MAX_EXPRESSION_LENGTH` | Maximum allowed expression string length (10–10,000). | `1000` |
+| `CALC_MAX_EXPRESSION_LENGTH` | Maximum allowed expression string length (10–10,000). | `4000` |
 | `CALC_EVALUATION_TIMEOUT_MS` | Maximum evaluation time in milliseconds (100–30,000). | `5000` |
 | `CALC_MAX_RESULT_LENGTH` | Maximum result string length in characters (1,000–1,000,000). | `100000` |
 | `MCP_TRANSPORT_TYPE` | Transport: `stdio` or `http`. | `stdio` |
@@ -132,7 +130,7 @@ See [`.env.example`](./.env.example) for optional session, resumability, logging
 
 ### Local development
 
-Requires [Bun v1.4.0](https://bun.sh/) or higher. The built server also runs on Node.js v24+.
+Requires [Bun v1.4.4](https://bun.sh/) or higher. The built server also runs on Node.js v24+.
 
 - **Clone and install:**
   ```sh
