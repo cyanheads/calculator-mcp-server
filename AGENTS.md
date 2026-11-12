@@ -17,6 +17,7 @@ A publicly-hosted calculator MCP server that lets any LLM verify mathematical co
 |:----------|:-----|:--------|
 | Tool | `calculate` | Evaluate, simplify, or differentiate math expressions. Single tool — `operation` param defaults to `evaluate`. |
 | Resource | `calculator://help` | Static reference of available functions, operators, constants, and syntax. |
+| Resource | `skill://calculator-guide/SKILL.md` | The published `calculator-guide` skill (`skills/calculator-guide/`), served through `createApp({ skills })`. |
 
 ### Security Model
 
