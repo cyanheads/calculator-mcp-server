@@ -4,14 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { filterAgentDocEntries } from '../../scripts/clean-mcpb.js';
-
-/**
- * The copied linter has a source fallback used only in the framework checkout.
- * Load it as a runtime script rather than adding that checkout to this typecheck.
- */
-const { AGENT_DOC_ENTRY } = await import(
-  new URL('../../scripts/lint-packaging.ts', import.meta.url).href
-);
+import { AGENT_DOC_ENTRY } from '../../scripts/lint-packaging.js';
 
 describe('MCPB agent documentation filtering', () => {
   const runtimeEntries = [
@@ -21,6 +14,7 @@ describe('MCPB agent documentation filtering', () => {
     'node_modules/example/node_modules/@modelcontextprotocol/server/dist/ext/skills/index.cjs',
     'node_modules/@scope/example/node_modules/@modelcontextprotocol/core/dist/ext/skills/index.cjs',
     'node_modules/example/lib/skills/runtime.js',
+    'node_modules/@scope/skills/index.js',
   ];
   const documentationEntries = [
     'node_modules/example/skills/example-guide/SKILL.md',
@@ -31,6 +25,8 @@ describe('MCPB agent documentation filtering', () => {
     'node_modules/@scope/example/skills/example-guide/SKILL.md',
     'node_modules/example/node_modules/nested/skills/example-guide/SKILL.md',
     'node_modules/@scope/example/node_modules/@scope/nested/.agents/skills/example/SKILL.md',
+    'node_modules/example/AGENTS.md',
+    'node_modules/@cyanheads/mcp-ts-core/CLAUDE.md',
   ];
 
   it('preserves the executable SDK extension while removing agent documentation', () => {
