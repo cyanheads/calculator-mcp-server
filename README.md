@@ -1,7 +1,7 @@
 <div align="center">
   <h1>@cyanheads/calculator-mcp-server</h1>
   <p><b>Evaluate, simplify, and differentiate mathematical expressions via MCP. STDIO or Streamable HTTP.</b>
-  <div>1 Tool • 1 Resource</div>
+  <div>1 Tool • 1 Resource • 1 Skill</div>
   </p>
 </div>
 
@@ -42,6 +42,14 @@ Calculator powered by math.js. Verify numeric results, simplify algebraic expres
 | Resource | Description |
 |:------------|:------------|
 | `calculator://help` | Available functions, operators, constants, and syntax reference. |
+
+### Skills
+
+| Skill | Description |
+|:---|:---|
+| [`calculator-guide`](./skills/calculator-guide/SKILL.md) | Which `numericType` answers which question, what a result does not prove (integer-looking floats, tolerance-based `==`, `lusolve` on a singular matrix, a `simplify` that stops short of `0`), and workflows for derivative checks, business-day deadlines, statistics by dimension, unit chains, and integral tails |
+
+The server serves it over MCP as `skill://calculator-guide/SKILL.md`; it also ships in `skills/` in the npm package and Docker image.
 
 ## Capability reference
 
@@ -166,6 +174,7 @@ The image defaults to Streamable HTTP on port `3010`, stateless sessions, and lo
 | `src/mcp-server/tools/` | Tool definitions (`*.tool.ts`). |
 | `src/mcp-server/resources/` | Resource definitions (`*.resource.ts`). |
 | `src/services/` | Domain service integrations (MathService). |
+| `skills/` | Published skills, served over MCP and shipped in the package. |
 | `src/config/` | Environment variable parsing and validation with Zod. |
 | `docs/` | Generated directory tree. |
 | `tests/` | Calculation, configuration, and response-contract tests. |
