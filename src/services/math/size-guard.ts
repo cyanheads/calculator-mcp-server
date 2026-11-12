@@ -4,10 +4,11 @@
  *
  * - Per-call limits on math.js functions whose result size is set by an argument
  *   — a size vector, a count, a product or broadcast of inputs, a repetition of
- *   inputs (`concat(A, A, A)`), an index that reads or grows a matrix, or a
- *   formatting precision — rather than by the size of any one input. Each guard
- *   computes the size the call is about to build and throws
- *   {@link SizeLimitError} before allocating.
+ *   inputs (`concat(A, A, A)`), an index that reads or grows a matrix, a
+ *   formatting precision, or the index of a tabulated sequence (`stirlingS2`,
+ *   `bellNumbers`, `bernoulli`) — rather than by the size of any one input. Each
+ *   guard computes the size the call is about to build and throws
+ *   {@link SizeLimitError} before allocating; `range` also counts its steps.
  * - A per-evaluation element budget for what many individually allowed results
  *   add up to — repeated copies, or a loop (`map`, `forEach`, `filter`, a
  *   user-defined function) that builds a collection per iteration. Every guarded
@@ -19,7 +20,8 @@
  * so `zeros(2)` works under numericType "Fraction" (see {@link WHOLE_NUMBER_ARGS}).
  * A Fraction instance additionally gets the same conversion on its index
  * functions (`index`, `row`, `column`) and on the dimension argument of its
- * reductions and `concat`, so `[1, 2, 3][2]` and `sum(A, 1)` work there too.
+ * reductions, `concat`, `diff`, and `mapSlices`, so `[1, 2, 3][2]` and
+ * `sum(A, 1)` work there too.
  * @module services/math/size-guard
  */
 
@@ -306,8 +308,17 @@ function assertFoldedShape(
   }
 }
 
-/** Element count `range(start, end, step)` produces, from numeric or `"start:end"` / `"start:step:end"` arguments. */
+/**
+ * Element count `range` produces, from `start, end[, step]` or a `"start:end"` /
+ * `"start:step:end"` string, then an optional `includeEnd` boolean. Expressions
+ * reach the range transform, which includes the end unless a boolean says
+ * otherwise, so an absent boolean counts as inclusive. A range that steps away
+ * from its end predicts 0 (math.js returns `[]`), and so does a zero step, which
+ * math.js rejects itself.
+ */
 function rangeCount(args: unknown[]): number {
+  const last = args.at(-1);
+  const includeEnd = typeof last === 'boolean' ? last : true;
   let start: number;
   let end: number;
   let step = 1;
@@ -320,7 +331,83 @@ function rangeCount(args: unknown[]): number {
     end = toNumber(args[1]);
     if (args.length > 2 && typeof args[2] !== 'boolean') step = toNumber(args[2]);
   }
-  return Math.floor(Math.abs((end - start) / step)) + 1;
+  if (step === 0) return 0;
+  const steps = (end - start) / step;
+  if (includeEnd) return steps >= 0 ? Math.floor(steps) + 1 : 0;
+  return steps > 0 ? Math.ceil(steps) : 0;
+}
+
+/** Steps the `range` call in progress has taken; its guard resets it. */
+let rangeSteps = 0;
+
+/**
+ * The `add` a range factory steps with, counting each step: a range call stops
+ * past {@link MAX_MATRIX_ELEMENTS} steps, the per-call limit.
+ */
+function countRangeSteps(add: Impl): Impl {
+  return (...args: unknown[]) => {
+    rangeSteps += 1;
+    if (rangeSteps > MAX_MATRIX_ELEMENTS) {
+      raise(
+        new SizeLimitError(
+          `range() would build more than the limit of ${MAX_MATRIX_ELEMENTS.toLocaleString('en-US')} elements.`,
+        ),
+      );
+    }
+    return add(...args);
+  };
+}
+
+type Dependencies = Record<string, unknown>;
+
+/**
+ * Factory dependencies replaced for a guarded function's own math.js factory and
+ * its transform's: range steps with a counting `add`.
+ */
+const GUARDED_DEPENDENCIES: Record<string, (deps: Dependencies) => Dependencies> = {
+  range: (deps) => ({ ...deps, add: countRangeSteps(deps.add as Impl) }),
+};
+
+/**
+ * Largest `n` that `stirlingS2(n, k)` and `bellNumbers(n)` take, for number
+ * arguments and when an argument is a BigNumber. Either bound holds the table
+ * these functions build to about 10 MB.
+ */
+export const MAX_STIRLING_N = { number: 1412, BigNumber: 314 } as const;
+
+/** Reject a Stirling-number call whose table would pass {@link MAX_STIRLING_N}. */
+function assertStirlingTable(fn: string, n: unknown, k: unknown = 0): void {
+  const rows = toNumber(n);
+  // math.js rejects a negative or non-integer n itself.
+  if (!Number.isInteger(rows) || rows < 0) return;
+  const big = typeof n !== 'number' || typeof k !== 'number';
+  if (rows <= (big ? MAX_STIRLING_N.BigNumber : MAX_STIRLING_N.number)) return;
+  const numberCap = MAX_STIRLING_N.number.toLocaleString('en-US');
+  const caps = big
+    ? `${MAX_STIRLING_N.BigNumber} when an argument is a BigNumber (${numberCap} for numbers)`
+    : `${numberCap} (${MAX_STIRLING_N.BigNumber} when an argument is a BigNumber)`;
+  raise(
+    new SizeLimitError(`${fn}() takes n up to ${caps}; got n = ${rows.toLocaleString('en-US')}.`),
+  );
+}
+
+/**
+ * Largest index `bernoulli(n)` takes. Its table holds one entry per even index up
+ * to n, so this bounds it at 500 entries — for a Fraction or bigint argument,
+ * exact rationals of about 1.8 million digits in all.
+ */
+export const MAX_BERNOULLI_INDEX = 1000;
+
+/** Reject a `bernoulli(n)` call whose table would pass {@link MAX_BERNOULLI_INDEX}. */
+function assertBernoulliTable(n: unknown): void {
+  const index = toNumber(n);
+  // An odd index past 1 is 0 and builds nothing; math.js rejects non-integers itself.
+  if (!Number.isInteger(index) || index % 2 !== 0 || index <= MAX_BERNOULLI_INDEX) return;
+  raise(
+    new SizeLimitError(
+      `bernoulli() takes an even n up to ${MAX_BERNOULLI_INDEX.toLocaleString('en-US')}; got n = ${index.toLocaleString('en-US')}.`,
+    ),
+  );
 }
 
 /** Shape a matrix grows to when an index reaches past its current size. */
@@ -385,7 +472,13 @@ const SIZE_GUARDS: Record<string, Guard> = {
     // identity(n) and identity([n]) are square.
     assertElements('identity', dims.length === 1 ? (dims[0] as number) ** 2 : countOf(dims));
   },
-  range: (args) => assertElements('range', rangeCount(args)),
+  range: (args) => {
+    assertElements('range', rangeCount(args));
+    rangeSteps = 0;
+  },
+  stirlingS2: (args) => assertStirlingTable('stirlingS2', args[0], args[1]),
+  bellNumbers: (args) => assertStirlingTable('bellNumbers', args[0]),
+  bernoulli: (args) => assertBernoulliTable(args[0]),
   random: (args) => assertElements('random', sizeProduct(args[0])),
   randomInt: (args) => assertElements('randomInt', sizeProduct(args[0])),
   matrixFromFunction: (args) => assertElements('matrixFromFunction', sizeProduct(args[0])),
@@ -492,6 +585,33 @@ const LAZY_BROADCASTING_TRANSFORMS: Record<string, (args: unknown[]) => number> 
  */
 const COLLECTION_SIGNATURE = /Array|Matrix|any/;
 
+const selectCollections = (signature: string) => COLLECTION_SIGNATURE.test(signature);
+
+/** The guard of a {@link BROADCASTING_FUNCTIONS} entry: its operands' broadcast shape. */
+const broadcastGuard =
+  (name: string): Guard =>
+  (args) =>
+    assertFoldedShape(name, args, broadcastShape);
+
+/**
+ * Guard a function of {@link BROADCASTING_FUNCTIONS} as {@link installSizeGuards}
+ * does, for one rebuilt after it ran: fraction-exact.ts rebuilds `nthRoot` on a
+ * Fraction instance so that its collection forms take exact Fraction roots.
+ */
+export function guardBroadcasting(
+  math: MathJsInstance,
+  name: (typeof BROADCASTING_FUNCTIONS)[number],
+  fn: (...args: never[]) => unknown,
+): unknown {
+  return guardFunction(
+    math.typed as unknown as Typed,
+    name,
+    fn as Impl,
+    broadcastGuard(name),
+    selectCollections,
+  );
+}
+
 /**
  * Argument positions that hold whole numbers — sizes, counts, indexes, or
  * dimensions. Under numericType "Fraction" every literal is a Fraction, and
@@ -557,6 +677,9 @@ const WHOLE_NUMBER_ARGS: Record<string, WholeNumberArgs> = {
   std: DIMENSION,
   variance: DIMENSION,
   cumsum: DIMENSION,
+  diff: DIMENSION,
+  // `mapSlices(A, dim, callback)`; its former name `apply` shares the factory.
+  mapSlices: DIMENSION,
   // concat's dimension is its last argument, after at least one matrix; every other
   // argument is an Array or Matrix, so a scalar Fraction past the first is the
   // dimension. The typed function takes it inside a rest parameter
@@ -584,6 +707,8 @@ const FRACTION_WHOLE_NUMBER_FUNCTIONS = [
   'std',
   'variance',
   'cumsum',
+  'diff',
+  'mapSlices',
 ] as const;
 
 /** A whole-number Fraction as a number; a non-integer one is rejected with a clear message. */
@@ -696,12 +821,16 @@ function guardFunction(
   return typed(name, { ...signatures, ...variants });
 }
 
-/** A factory that builds `original`'s function and returns it wrapped by `wrap`. */
+/**
+ * A factory that builds `original`'s function — from its dependencies as
+ * {@link GUARDED_DEPENDENCIES} adjusts them — and returns it wrapped by `wrap`.
+ */
 function wrappedFactory(original: MathFactory, wrap: (fn: Impl) => unknown): MathFactory {
+  const adjust = GUARDED_DEPENDENCIES[original.fn] ?? ((deps: Dependencies) => deps);
   return factory(
     original.fn,
     original.dependencies as never,
-    (deps) => wrap(original(deps as Record<string, unknown>) as Impl),
+    (deps) => wrap(original(adjust(deps as Dependencies)) as Impl),
     original.meta,
   ) as MathFactory;
 }
@@ -827,12 +956,11 @@ export function installSizeGuards(
   };
 
   const selectAll = () => true;
-  const selectCollections = (signature: string) => COLLECTION_SIGNATURE.test(signature);
   for (const [name, guard] of Object.entries(SIZE_GUARDS)) {
     addGuard(name, guard, name === 'multiply' ? selectCollections : selectAll);
   }
   for (const name of BROADCASTING_FUNCTIONS) {
-    addGuard(name, (args) => assertFoldedShape(name, args, broadcastShape), selectCollections);
+    addGuard(name, broadcastGuard(name), selectCollections);
   }
   // An empty options object reads the config without changing it.
   if (math.config({}).number === 'Fraction') {
@@ -854,4 +982,16 @@ export function installSizeGuards(
   const classes = math as unknown as Record<'DenseMatrix' | 'SparseMatrix', MatrixClass>;
   guardMatrixMethods(classes.DenseMatrix, 'DenseMatrix');
   guardMatrixMethods(classes.SparseMatrix, 'SparseMatrix');
+}
+
+// --- Exact integer results (see fraction-exact.ts) ---
+
+/**
+ * Check an exact result of `digits` decimal digits that `fn` is about to compute
+ * against {@link MAX_STRING_LENGTH} — past it, the result could never be
+ * returned, so the call fails before computing — and charge its digits to the
+ * evaluation budget.
+ */
+export function assertDigits(fn: string, digits: number): void {
+  assertCharacters(fn, digits);
 }

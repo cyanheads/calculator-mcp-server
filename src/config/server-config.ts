@@ -6,13 +6,20 @@
 import { z } from '@cyanheads/mcp-ts-core';
 import { parseEnvConfig } from '@cyanheads/mcp-ts-core/config';
 
+/**
+ * Default `CALC_MAX_EXPRESSION_LENGTH`, in UTF-16 code units. Exported so the
+ * tool description can state it: the definition is built at import, before the
+ * config parses, so it cannot read the configured value.
+ */
+export const DEFAULT_MAX_EXPRESSION_LENGTH = 4000;
+
 const ServerConfigSchema = z.object({
   maxExpressionLength: z.coerce
     .number()
     .int()
     .min(10)
     .max(10_000)
-    .default(1000)
+    .default(DEFAULT_MAX_EXPRESSION_LENGTH)
     .describe('Maximum allowed expression string length (10–10,000)'),
   evaluationTimeoutMs: z.coerce
     .number()

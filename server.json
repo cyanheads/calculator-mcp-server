@@ -26,7 +26,7 @@
           "description": "Maximum allowed expression string length.",
           "format": "string",
           "isRequired": false,
-          "default": "1000"
+          "default": "4000"
         },
         {
           "name": "CALC_EVALUATION_TIMEOUT_MS",
@@ -72,7 +72,7 @@
           "description": "Maximum allowed expression string length.",
           "format": "string",
           "isRequired": false,
-          "default": "1000"
+          "default": "4000"
         },
         {
           "name": "CALC_EVALUATION_TIMEOUT_MS",

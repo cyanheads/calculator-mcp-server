@@ -1,18 +1,15 @@
 /**
  * @fileoverview Hardened math.js wrapper for secure expression evaluation.
- * Creates a restricted math.js instance with dangerous functions disabled in
- * the expression scope, parses each expression once and checks the tree before
- * anything runs, and evaluates, inspects, and formats the result inside a vm
- * sandbox with a timeout.
+ * Parses each expression once on a hardened math.js instance (see
+ * math-instance.ts), checks the tree before anything runs, and evaluates,
+ * inspects, and formats the result inside a vm sandbox with a timeout.
  * @module services/math/math-service
  */
 
 import vm from 'node:vm';
 import { McpError, timeout, validationError } from '@cyanheads/mcp-ts-core/errors';
 import {
-  all,
-  create,
-  type Fraction,
+  type FunctionAssignmentNode,
   type FunctionNode,
   type IndexNode,
   isBigNumber,
@@ -23,16 +20,20 @@ import {
   isUnit,
   type MathNode,
   type SimplifyRule,
-  type UnitDefinition,
+  type SymbolNode,
 } from 'mathjs';
 import type { ServerConfig } from '@/config/server-config.js';
+import { fractionFailureIn } from './fraction-exact.js';
 import {
-  beginEvaluation,
-  installSizeGuards,
-  isPlainObject,
-  meterNode,
-  sizeLimitErrorIn,
-} from './size-guard.js';
+  callsRoutedFunction,
+  canonicalName,
+  isRoutedFunction,
+  routedCall,
+} from './function-names.js';
+import { HELP_CONTENT } from './help-content.js';
+import { BIGNUMBER_ZETA_ERROR, createMathInstance, type MathInstance } from './math-instance.js';
+import { guardScalarOperators, parseErrorMessage, readNotation } from './notation.js';
+import { beginEvaluation, isPlainObject, meterNode, sizeLimitErrorIn } from './size-guard.js';
 import type { MathResult, NumericType } from './types.js';
 
 /**
@@ -59,51 +60,6 @@ const TRIG_SIMPLIFY_RULES: SimplifyRule[] = [
 ];
 
 /**
- * Custom units registered during service init. math.js disables `createUnit`
- * in the expression scope, so these are added programmatically before the
- * disabling step. Definitions use exact SI-derived values where possible.
- */
-const CUSTOM_UNITS: Record<string, string | UnitDefinition> = {
-  mph: '1 mile/hour',
-  knot: { definition: '1852 m/hour', aliases: ['knots', 'kt', 'kts'] },
-  lightyear: { definition: '9460730472580800 m', aliases: ['lightyears', 'ly'] },
-};
-
-/**
- * Functions disabled in the expression scope for security.
- * These are overridden via math.import() — expressions cannot call them.
- * simplify/derivative are called programmatically by the tool handler, not from expressions.
- * `config` is not listed: it gets a read-only guard instead (see createMathInstance).
- */
-const DISABLED_FUNCTIONS = [
-  'import',
-  'createUnit',
-  'evaluate',
-  'parse',
-  'simplify',
-  'derivative',
-  'resolve',
-  'reviver',
-  'compile',
-  'chain',
-  'parser',
-] as const;
-
-/**
- * `typed` is NOT disabled here — it's used internally by math.js for function dispatch.
- * Overriding it breaks trig/simplify/etc. Instead, `typed()` calls from expressions are
- * caught by the BLOCKED_RESULT_TYPES check (resultType "function" is rejected).
- */
-
-/**
- * Constants/properties overridden in the expression scope to prevent info leakage.
- * `version` exposes the exact math.js version (enables targeted CVE research).
- */
-const REDACTED_CONSTANTS: Record<string, string> = {
-  version: 'redacted',
-};
-
-/**
  * Result types that must never be returned to clients.
  * Function references leak internal source code via toString().
  * ResultSet indicates multi-expression evaluation (newline bypass).
@@ -128,11 +84,26 @@ const STRINGIFYING_METHODS = new Set(['toString', 'toLocaleString']);
 const OPERATION_FUNCTIONS = new Set(['evaluate', 'simplify', 'derivative']);
 
 /**
- * Standard-notation function names math.js does not define — natural log `ln`
- * and the inverse-trig `arc*` family. Renamed on the parse tree (see
- * {@link inspectTree}) to their math.js builtins.
+ * Calls that would read the clock. The calculator reads none — every result is a
+ * function of the expression — so `evaluate` rejects them at parse time with a
+ * pointer to passing the date as a string. `simplify` and `derivative` keep
+ * treating them as symbolic functions (`now(t) + now(t)` → `2 * now(t)`).
  */
-const NOTATION_ALIAS = /^(?:ln|arc(?:sin|cos|tan|sec|csc|cot)h?)$/;
+const CLOCK_FUNCTIONS = new Set(['now', 'today']);
+
+/**
+ * V8's and JavaScriptCore's message for the `RangeError` an exhausted call stack
+ * throws (JavaScriptCore ends it with a period).
+ */
+const STACK_OVERFLOW = /^Maximum call stack size exceeded\.?$/;
+
+/**
+ * The `TypeError` math.js throws in place of a callback's error (`map`,
+ * `forEach`, `filter`, …): one prefix per callback level, then the callback's
+ * message — here the stack overflow's, and nothing else.
+ */
+const REWRAPPED_STACK_OVERFLOW =
+  /^(?:Function \S+ cannot apply callback arguments to function [^:]*: )+Maximum call stack size exceeded\.?$/;
 
 /**
  * Node types that compute a new value — a call, an operator, a matrix or object
@@ -159,12 +130,14 @@ const MIN_CHARS_PER_ELEMENT = 3;
 
 /**
  * math.js error thrown when a Fraction-mode expression calls a function with no
- * Fraction implementation: irrational and transcendental ones (`sqrt`, `sin`,
- * `log`, …) and some whose result can be rational (`sqrt(4)`, `5!`,
- * `combinations`). math.js reports it as an implicit type-conversion failure that
- * does not name the function; paired with a `numericType === 'Fraction'` guard it
- * maps to the actionable `fraction_unsupported` error instead of the misleading,
- * syntax-oriented `parse_failed`. See {@link MathService.classifyFailure}.
+ * Fraction implementation: transcendental ones (`sin`, `log`, `exp`, …) and some
+ * whose result can be rational (`log2(8)`, `stirlingS2(5, 2)`). math.js reports it
+ * as an implicit type-conversion failure that does not name the function; paired
+ * with a `numericType === 'Fraction'` guard it maps to the actionable
+ * `fraction_unsupported` error instead of the misleading, syntax-oriented
+ * `parse_failed`. The functions fraction-exact.ts installs (`sqrt`, `!`,
+ * `combinations`, …) throw a `FractionResultError` instead when a result is not
+ * rational. See {@link MathService.classifyFailure}.
  */
 const FRACTION_CONVERSION_ERROR = /Cannot implicitly convert a Fraction/;
 
@@ -179,7 +152,7 @@ const FLOAT_TO_FRACTION_ERROR =
 
 /** `fraction_unsupported` message for a function Fraction mode cannot compute. */
 const FRACTION_FUNCTION_MESSAGE =
-  'numericType "Fraction" cannot compute this expression: either its result has no exact rational value (e.g. sqrt(2), sin(1), log(3)), or it calls a function Fraction mode cannot compute, even for a rational result (e.g. sqrt(4), 5!, combinations(5, 2)). Retry with numericType "number" or "BigNumber".';
+  'numericType "Fraction" cannot compute this expression: either its result has no exact rational value (e.g. sqrt(2), sin(1), log(3)), or it calls a function Fraction mode cannot compute, even for a rational result (e.g. log2(8), stirlingS2(5, 2)). Retry with numericType "number" or "BigNumber".';
 
 /** `undefined_result` message: a non-finite value, or a Fraction division by zero. */
 const UNDEFINED_RESULT_MESSAGE =
@@ -187,7 +160,7 @@ const UNDEFINED_RESULT_MESSAGE =
 
 /** `fraction_unsupported` message for a Fraction-mode evaluation that picked up a float. */
 const FRACTION_FLOAT_MESSAGE =
-  'numericType "Fraction" cannot return this result exactly: the expression uses a value Fraction mode holds only as a rounded 64-bit float — an irrational constant (pi, e), a non-integer power (2^(1/2)), a complex number with a non-integer part, or a float from number() or random(). Retry with numericType "number" or "BigNumber".';
+  'numericType "Fraction" cannot return this result exactly: the expression uses a value Fraction mode holds only as a rounded 64-bit float — an irrational constant (pi, e), a complex number with a non-integer part, or a float from number() or random(). Retry with numericType "number" or "BigNumber".';
 
 /** math.js derivative error for a function or operator it has no differentiation rule for. */
 const NO_DERIVATIVE_RULE = /^Cannot process (function|operator) "([^"]+)" in derivative/;
@@ -239,6 +212,50 @@ const TYPE_MISMATCH_ERROR =
   /^(?:Units do not match|Cannot convert |Cannot implicitly convert )|is no angle$/;
 
 /**
+ * math.js refusing a 64-bit float of more than 15 significant digits where a
+ * BigNumber is expected — `random() + 1` under numericType "BigNumber",
+ * `bignumber(1) + 1/3` in any mode. Unanchored, so a callback error that `map`
+ * re-wrapped matches too.
+ */
+const FLOAT_TO_BIGNUMBER_ERROR =
+  /Cannot implicitly convert a number with >15 significant digits to BigNumber/;
+
+/** Recovery for {@link FLOAT_TO_BIGNUMBER_ERROR}, in place of the contract's unit hint. */
+const FLOAT_TO_BIGNUMBER_HINT: ThrowSiteHint = {
+  text: 'BigNumber arithmetic takes a 64-bit float implicitly only up to 15 significant digits: wrap the float in bignumber(…) to convert it explicitly, e.g. bignumber(random()) + 1.',
+  literals: ['bignumber(…)', 'bignumber(random()) + 1'],
+};
+
+/**
+ * math.js errors for a function with no BigNumber implementation for its
+ * argument: `gamma` and `factorial` at a non-integer, and `lgamma` at any value.
+ * Unanchored, so a callback error that `map` re-wrapped matches too.
+ */
+const NO_BIGNUMBER_IMPLEMENTATION =
+  /Integer BigNumber expected|doesn't yet provide an implementation of the algorithm \w+ for BigNumber/;
+
+/**
+ * Recovery under numericType "BigNumber" for a call with no BigNumber
+ * implementation — one of {@link NO_BIGNUMBER_IMPLEMENTATION}, a typed function
+ * that takes a number but not a BigNumber (`erf`), or `zeta`, whose math.js
+ * BigNumber implementation is refused as inaccurate ({@link BIGNUMBER_ZETA_ERROR}).
+ * The same call computes under numericType "number", while the contract hints say
+ * to fix the argument or a unit.
+ */
+const NO_BIGNUMBER_HINT: ThrowSiteHint = {
+  text: 'A function in this expression has no BigNumber implementation for its argument (erf, lgamma, and zeta have none; gamma and factorial take only integers under BigNumber): retry with numericType "number", which computes it as a 64-bit float.',
+};
+
+/**
+ * Recovery for `undefined_result` under numericType "BigNumber", whose contract
+ * hint (retry with BigNumber for an overflow) names the mode already selected.
+ */
+const BIGNUMBER_UNDEFINED_HINT: ThrowSiteHint = {
+  text: 'Division by zero, 0/0, and log(0) are undefined in every numericType, so fix the expression. Under numericType "BigNumber" an overflow has passed a decimal exponent of 9e15, so compute the logarithm of the value instead; an inverse trig or hyperbolic function outside its real domain (asin(2), acosh(0.5)) is NaN here, while numericType "number" returns its complex value.',
+  literals: ['asin(2)', 'acosh(0.5)'],
+};
+
+/**
  * Scope key names that could pollute the object prototype chain or shadow
  * critical Object.prototype methods. Validated before passing to math.js.
  */
@@ -260,8 +277,12 @@ const BLOCKED_SCOPE_KEYS = new Set([
 
 /** Findings of {@link inspectTree} that reject the expression before it runs. */
 interface TreeInspection {
+  /** First `now()` / `today()` call found, if any (see {@link CLOCK_FUNCTIONS}). */
+  clockCall: string | undefined;
   /** First `evaluate` / `simplify` / `derivative` call found, if any. */
   operationCall: string | undefined;
+  /** First call to `roots` / `solve` the expression does not define, if any (see {@link routedCall}). */
+  routedCall: string | undefined;
   /** The expression accesses `.toString` / `.toLocaleString` on some value. */
   stringifies: boolean;
   /** Names used as values rather than called — `min` in `5 min`, `x` in `x + 1`. */
@@ -269,28 +290,60 @@ interface TreeInspection {
 }
 
 /**
- * Walk a freshly parsed tree once: flag stringifier access and operation-named
- * calls, collect the names used as values, meter every value-building node against the element budget (so a node
+ * Walk a freshly parsed tree once: flag stringifier access, operation-named
+ * calls, clock calls, and `roots` / `solve` calls, collect the names used as
+ * values, meter every value-building node against the element budget (so a node
  * in a loop body — a user-defined function or an inline `map` callback — is
- * charged on each iteration), and rename standard-notation calls in place —
- * `ln` → `log`, `arc<fn>` → `a<fn>` (`arcsin` → `asin`, `arctanh` → `atanh`, …).
+ * charged on each iteration), keep the declared errors user-defined function
+ * bodies raise (see {@link keepBodyFailure}), and rename synonym calls in place
+ * to the function they stand for — `ln` → `log`, `arcsin` → `asin`, `avg` →
+ * `mean`, `nCr` → `combinations`, `eig` → `eigs`, … (see function-names.ts).
+ *
+ * A name the expression defines as a function (`avg(v) = v * 10`, a recursive
+ * `nCr(n) = …` callback) is the caller's own: calls to it are neither renamed nor
+ * routed, anywhere in the expression. So is a parameter its body calls
+ * (`f(nCr) = nCr(5, 2)` calls the argument), within that body only. Renames and
+ * routes are applied once the walk has seen every definition, so a body that
+ * calls a name defined after it keeps the caller's function too.
  *
  * The rename works on `FunctionNode`s whose callee is a `SymbolNode`, so string
  * literals (`"ln("` is a `ConstantNode`) and scope variables named `ln` (a bare
  * `SymbolNode`) are never touched, and nested calls are reached because the walk
  * covers every node. It is name-level rather than a `math.import` alias because
- * symbolic `derivative` matches builtin names — an imported alias is not in its
- * differentiation table. The tree is evaluated as-is afterwards, never
- * re-stringified: a Fraction-mode tree prints `0.1` as `1/10`.
+ * an imported alias is a separate function: symbolic `derivative` matches builtin
+ * names, and an alias misses the canonical function's expression transform and
+ * any later override on the instance. The tree is evaluated as-is afterwards,
+ * never re-stringified: a Fraction-mode tree prints `0.1` as `1/10`.
  */
 function inspectTree(tree: MathNode): TreeInspection {
   const inspection: TreeInspection = {
     stringifies: false,
+    clockCall: undefined,
     operationCall: undefined,
+    routedCall: undefined,
     valueNames: new Set(),
   };
+  /** Names the expression defines as functions. */
+  const defined = new Set<string>();
+  /** Callees inside a function body that name one of its parameters: the argument, not a synonym. */
+  const parameterCalls = new Set<MathNode>();
+  /** Calls to a synonym or a solver name, in walk order; renamed or routed after the walk. */
+  const namedCalls: SymbolNode[] = [];
+  bodyFailure = undefined;
   tree.traverse((node, path) => {
     if (VALUE_BUILDING_NODES.has(node.type)) meterNode(node);
+    if (node.type === 'FunctionAssignmentNode') {
+      const { name, params, expr } = node as FunctionAssignmentNode;
+      defined.add(name);
+      keepBodyFailure(expr);
+      expr.traverse((inner) => {
+        if (inner.type !== 'FunctionNode') return;
+        const { fn } = inner as FunctionNode;
+        if (fn.type === 'SymbolNode' && params.includes((fn as SymbolNode).name)) {
+          parameterCalls.add(fn);
+        }
+      });
+    }
     if (node.type === 'SymbolNode' && path !== 'fn') {
       inspection.valueNames.add((node as MathNode & { name: string }).name);
     }
@@ -308,15 +361,57 @@ function inspectTree(tree: MathNode): TreeInspection {
       return;
     }
     if (node.type !== 'FunctionNode') return;
-    const callee = (node as FunctionNode).fn as MathNode & { name?: string };
-    if (callee.type !== 'SymbolNode' || callee.name === undefined) return;
-    if (OPERATION_FUNCTIONS.has(callee.name)) {
-      inspection.operationCall ??= callee.name;
-    } else if (NOTATION_ALIAS.test(callee.name)) {
-      callee.name = callee.name === 'ln' ? 'log' : `a${callee.name.slice(3)}`;
+    const callee = (node as FunctionNode).fn;
+    if (callee.type !== 'SymbolNode') return;
+    const { name } = callee as SymbolNode;
+    if (CLOCK_FUNCTIONS.has(name)) inspection.clockCall ??= name;
+    if (OPERATION_FUNCTIONS.has(name)) {
+      inspection.operationCall ??= name;
+    } else if (canonicalName(name) !== undefined || isRoutedFunction(name)) {
+      namedCalls.push(callee as SymbolNode);
     }
   });
+  for (const callee of namedCalls) {
+    if (defined.has(callee.name) || parameterCalls.has(callee)) continue;
+    const canonical = canonicalName(callee.name);
+    if (canonical !== undefined) callee.name = canonical;
+    else inspection.routedCall ??= callee.name;
+  }
   return inspection;
+}
+
+/**
+ * The declared error a user-defined function's body raised during the current
+ * evaluation, if any. math.js re-wraps an error thrown inside a typed callback
+ * (`map`, `forEach`, `filter`, `mapSlices`, …) in a `TypeError` that keeps only
+ * its message, losing the reason and recovery hint. In an expression, the typed
+ * callbacks are the functions it defines (`f(v) = …`) and builtins passed by
+ * name; this server's builtins raise no declared error as a callback (`integrate`
+ * cannot be passed by name, the date functions throw plain errors).
+ */
+let bodyFailure: McpError | undefined;
+
+/** Wrap a function body's `_compile` so a declared error it throws is kept in {@link bodyFailure}. */
+function keepBodyFailure(body: MathNode): void {
+  type CompiledNode = (...args: unknown[]) => unknown;
+  const target = body as unknown as { _compile(math: unknown, argNames: unknown): CompiledNode };
+  const compile = target._compile.bind(target);
+  target._compile = (math, argNames) => {
+    const evaluate = compile(math, argNames);
+    return (...args: unknown[]) => {
+      try {
+        return evaluate(...args);
+      } catch (err) {
+        if (err instanceof McpError) bodyFailure = err;
+        throw err;
+      }
+    };
+  };
+}
+
+/** The declared error behind a failure a callback re-wrapped: its message ends the failure's. */
+function bodyFailureIn(message: string): McpError | undefined {
+  return bodyFailure && message.endsWith(bodyFailure.message) ? bodyFailure : undefined;
 }
 
 /** What {@link scanResult} found while walking a result value. */
@@ -430,250 +525,6 @@ interface TimedCallSandbox extends vm.Context {
   result?: unknown;
 }
 
-/** Bundled references extracted from a single math.js instance. */
-interface MathInstance {
-  derivative: (expr: MathNode, variable: string) => MathNode;
-  format: (
-    value: unknown,
-    options?: { precision?: number; lowerExp?: number; upperExp?: number },
-  ) => string;
-  /** Whether an expression name resolves to one of this instance's functions. */
-  isFunction: (name: string) => boolean;
-  parse: (expr: string) => MathNode;
-  /** Return the auto unit system to its seed, so no earlier call shapes this one's units. */
-  resetUnitSystem: () => void;
-  /** A scope value in this instance's numeric type, where it converts exactly. */
-  scopeValue: (value: number) => unknown;
-  simplify: (expr: MathNode, rules?: SimplifyRule[]) => MathNode;
-  /** math.js default simplify rules, captured before the hardening override. */
-  simplifyRules: SimplifyRule[];
-  typeOf: (value: unknown) => string;
-}
-
-/**
- * Largest decimal exponent a Fraction-mode literal may carry. `1e1000` already
- * spells out a 1001-digit integer; past this, an exponent only builds numbers too
- * large to return, so it fails fast instead of allocating.
- */
-const MAX_FRACTION_LITERAL_EXPONENT = 1000;
-
-/** A decimal literal in exponent notation: mantissa digits, fraction digits, exponent. */
-const EXPONENT_LITERAL = /^(\d*)(?:\.(\d*))?[eE]([+-]?\d+)$/;
-
-/**
- * Rewrite an exponent-notation literal as the plain decimal it denotes
- * (`1.5e-3` → `0.0015`), which fraction.js reads exactly. Returns `undefined`
- * for anything that is not exponent notation.
- */
-function expandExponentLiteral(literal: string): string | undefined {
-  const match = EXPONENT_LITERAL.exec(literal);
-  if (!match) return undefined;
-  const [, whole = '', fraction = '', exponentText = '0'] = match;
-  const exponent = Number(exponentText);
-  if (Math.abs(exponent) > MAX_FRACTION_LITERAL_EXPONENT) {
-    throw new SyntaxError(
-      `Exponent literal "${literal}" is out of range for numericType "Fraction" (exponents up to ±${MAX_FRACTION_LITERAL_EXPONENT}); use numericType "BigNumber" for numbers this large or small.`,
-    );
-  }
-  const digits = whole + fraction;
-  const point = whole.length + exponent;
-  if (point <= 0) return `0.${'0'.repeat(-point)}${digits}`;
-  if (point >= digits.length) return digits + '0'.repeat(point - digits.length);
-  return `${digits.slice(0, point)}.${digits.slice(point)}`;
-}
-
-/**
- * Let a Fraction instance read exponent-notation literals exactly. `numeric` is
- * what the parser uses to turn a literal into a value; for a Fraction target, an
- * exponent literal is expanded to plain decimal first. Every other conversion is
- * passed through unchanged.
- */
-function installExponentLiterals(
-  math: ReturnType<typeof create>,
-  mathImport: ReturnType<typeof create>['import'],
-): void {
-  const numeric = math.numeric.bind(math) as (value: unknown, outputType?: string) => unknown;
-  const exactNumeric = (value: unknown, outputType?: string) => {
-    const expanded =
-      outputType === 'Fraction' && typeof value === 'string'
-        ? expandExponentLiteral(value)
-        : undefined;
-    return numeric(expanded ?? value, outputType);
-  };
-  mathImport({ numeric: exactNumeric }, { override: true });
-}
-
-/**
- * Read Fraction-mode scope values the way the instance's own arithmetic does:
- * math.js converts a number to a Fraction implicitly when the Fraction equals it
- * exactly (0.5 → 1/2, 0.1 → 1/10), so `x + 0` already reads 0.5 as 1/2. Applying
- * that rule up front makes a bare `x` read the same. A number with no equal
- * Fraction stays a float, which the result scan then rejects.
- */
-function fractionScopeValue(fraction: (value: number) => Fraction): (value: number) => unknown {
-  return (value) => {
-    const exact = fraction(value);
-    return exact.valueOf() === value ? exact : value;
-  };
-}
-
-/** The math.js `Unit` statics that unit registration and simplification read. */
-interface UnitRegistry {
-  BASE_UNITS: Record<string, unknown>;
-  UNIT_SYSTEMS: Record<string, Record<string, unknown>> & { auto: Record<string, unknown> };
-  UNITS: Record<string, { base?: unknown }>;
-}
-
-/**
- * Register {@link CUSTOM_UNITS} without changing how other results simplify, and
- * return a function that resets the instance's auto unit system.
- *
- * math.js simplifies a combined result (`10 m / 2 s`) through its "auto" unit
- * system: one unit per base dimension, overwritten by every unit it parses. That
- * state lives on the instance, so it leaked between calls, and `createUnit`
- * disturbed it three ways. A unit whose dimensions match no base unit (a velocity)
- * got a base of its own (`mph_STUFF`), so every velocity then simplified to mph or
- * knot. A unit with a base enters the auto system whenever it is parsed, so a
- * `lightyear` elsewhere turned length results into `ly`. And parsing the
- * definitions re-seeded the system (`hour` as the time unit). So the new base is
- * removed, the custom units lose their base (they keep their dimensions, so
- * conversions and unit checks are unchanged), and the auto system is reset to its
- * seed before every call (#37).
- */
-function registerCustomUnits(math: ReturnType<typeof create>): () => void {
-  const registry = math.Unit as unknown as UnitRegistry;
-  const auto = registry.UNIT_SYSTEMS.auto;
-  const seed = { ...auto };
-  const bases = new Set(Object.keys(registry.BASE_UNITS));
-  const units = new Set(Object.keys(registry.UNITS));
-  math.createUnit(CUSTOM_UNITS);
-  for (const key of Object.keys(registry.BASE_UNITS)) {
-    if (bases.has(key)) continue;
-    delete registry.BASE_UNITS[key];
-    for (const system of Object.values(registry.UNIT_SYSTEMS)) delete system[key];
-  }
-  for (const [name, unit] of Object.entries(registry.UNITS)) {
-    if (!units.has(name)) delete unit.base;
-  }
-  return () => {
-    for (const key of Object.keys(auto)) delete auto[key];
-    Object.assign(auto, seed);
-  };
-}
-
-/** Create and harden a math.js instance with the given numeric type. */
-function createMathInstance(number: 'number' | 'BigNumber' | 'Fraction'): MathInstance {
-  // biome-ignore lint/style/noNonNullAssertion: math.js types declare `all` as potentially undefined, but it's always defined at runtime
-  const math = create(all!, { number });
-  // Capture math.import before it's disabled — needed for the imports and guards below.
-  const mathImport = math.import.bind(math);
-
-  // fraction.js cannot read exponent notation, so a Fraction-mode literal such as
-  // `2e5` fails to parse. The parser converts literals through `numeric`, which it
-  // captures when first created — so the override must precede the `parse` capture.
-  if (number === 'Fraction') installExponentLiterals(math, mathImport);
-
-  // Capture references BEFORE the override step — the import shim replaces these
-  // on the instance, so binding after would capture the disabled stubs.
-  const format = math.format.bind(math);
-  const typeOf = math.typeOf.bind(math);
-  // Symbolic operations are captured here too so a hardened instance can back
-  // simplify/derivative — constant-folding inside them then hits the same
-  // disabled-function / redacted-constant overrides applied below (#18). `.rules`
-  // must be read before binding, since bind() drops the function's own properties.
-  const parse = math.parse.bind(math);
-  const simplify = math.simplify.bind(math);
-  const derivative = math.derivative.bind(math);
-  const simplifyRules = [...math.simplify.rules] as SimplifyRule[];
-  const scopeValue =
-    number === 'Fraction' ? fractionScopeValue(math.fraction.bind(math)) : (value: number) => value;
-
-  // Read the config before the override (an empty options object changes nothing).
-  // math.js injects `config` into every factory it instantiates lazily, and reads it
-  // both as a call (config()) and as properties (config.relTol, config.precision). A
-  // throwing stub breaks those readers — BigNumber arithmetic fails with
-  // `[DecimalError] precision: NaN`, and number-mode functions created after the
-  // override (eigs, schur, intersect, isPositive, compare, …) see `relTol`/`absTol` as
-  // undefined (#25). Every instance therefore gets a read-only guard (installed
-  // below): reads pass through, writes throw.
-  const currentConfig = math.config({}) as Record<string, unknown>;
-
-  // Register custom units and function-name aliases (natural-language plus common
-  // cross-ecosystem synonyms from Excel/NumPy/calculator notation). None are math.js
-  // builtins, so the imports are purely additive — they turn an agent's natural guess
-  // into a result instead of an "undefined function" error. Statistics/combinatorics
-  // functions aren't differentiable, so a value-alias suffices (unlike ln/arc*, which
-  // are renamed on the parse tree to stay in the derivative table — see inspectTree).
-  // Must run before createUnit/import are disabled below.
-  const resetUnitSystem = registerCustomUnits(math);
-  mathImport({
-    average: math.mean,
-    avg: math.mean,
-    stdev: math.std,
-    stddev: math.std,
-    permute: math.permutations,
-    nPr: math.permutations,
-    choose: math.combinations,
-    nCr: math.combinations,
-    length: math.count,
-    len: math.count,
-  });
-
-  // Bound what an expression can build from a size argument, a product, a broadcast,
-  // a repeated input, an index, or a formatting precision. Installed on the instance,
-  // so simplify/derivative constant folding on this instance hits the same limits.
-  installSizeGuards(math, mathImport, all as unknown as Record<string, unknown>);
-
-  // Replace `config` with a read-only guard. Two access patterns must be preserved
-  // for math.js internals:
-  //   1. config()          — gamma/factorial call this to read the full config object
-  //   2. config.precision  — gamma accesses precision directly as a property on the
-  //      function; eigs, intersect, compare, … read config.relTol / config.absTol
-  //
-  // Replacing config with a plain stub breaks both; the guard function below satisfies
-  // both patterns while blocking write access (calls with a non-empty options object).
-  // A bare `config()` from an expression therefore returns the config object — a fresh
-  // copy each call, as stock math.js does: the instance outlives the request, and an
-  // expression can assign into a plain object it holds (`c.k = …` after `c = config()`).
-  const configGuard = Object.assign(
-    (options?: Record<string, unknown>) => {
-      if (options !== undefined && Object.keys(options).length > 0) {
-        throw new Error('"config" is disabled for security.');
-      }
-      return { ...currentConfig };
-    },
-    currentConfig, // spread all config props (precision, relTol, …) onto the function object
-  );
-
-  // Disable dangerous functions and redact constants that leak implementation details,
-  // through the pre-captured import (this step disables math.import too).
-  const overrides: Record<string, unknown> = { ...REDACTED_CONSTANTS, config: configGuard };
-  for (const fn of DISABLED_FUNCTIONS) {
-    overrides[fn] = () => {
-      throw new Error(`Function "${fn}" is disabled for security.`);
-    };
-  }
-  mathImport(overrides, { override: true });
-
-  // The namespace an expression's names resolve in (before units), transforms included.
-  const expressionNames = (
-    math as unknown as { expression: { mathWithTransform: Record<string, unknown> } }
-  ).expression.mathWithTransform;
-
-  return {
-    format,
-    typeOf,
-    parse,
-    isFunction: (name) =>
-      Object.hasOwn(expressionNames, name) && typeof expressionNames[name] === 'function',
-    resetUnitSystem,
-    scopeValue,
-    simplify: simplify as MathInstance['simplify'],
-    derivative: derivative as MathInstance['derivative'],
-    simplifyRules,
-  };
-}
-
 export class MathService {
   /** Default IEEE 754 instance — used for the vast majority of evaluations. */
   private readonly defaultInstance: MathInstance;
@@ -733,7 +584,8 @@ export class MathService {
     const inst = this.instanceFor(numericType);
     // Parse with the instance for the requested numericType: constant nodes take
     // their numeric type at parse time.
-    const { tree, functionValues } = this.parseExpression(expression, inst);
+    const { tree, functionValues, clockCall } = this.parseExpression(expression, inst);
+    if (clockCall !== undefined) throw clockUnavailable(clockCall);
     // Evaluation, result inspection, and formatting all run inside the timeout, so
     // no result reaches formatting unchecked and no step runs unbounded (#31).
     return this.runWithTimeout(
@@ -770,14 +622,20 @@ export class MathService {
   simplifyExpression(expression: string): MathResult {
     this.validateInput(expression);
     const { tree } = this.parseExpression(expression, this.defaultInstance);
-    // Capture the alias-normalized input before simplification so we can detect
-    // whether the simplifier made any progress. String comparison of the raw input
-    // is not sufficient — formatting-only changes like `x+1` vs `x + 1` should not
-    // count as progress — so both sides are compared as math.js renders them.
-    const inputNormalized = tree.toString();
-    const result = this.runWithTimeout(() => this.simplify(tree, this.simplifyRules).toString(), {
-      operation: 'simplify',
-    });
+    /**
+     * Print the alias-normalized input before simplifying, to detect whether the
+     * simplifier made any progress. String comparison of the raw input is not
+     * sufficient — formatting-only changes like `x+1` vs `x + 1` should not count as
+     * progress — so both sides are compared as math.js renders them. The print runs
+     * in the timed call, which classifies a call-stack overflow in either step.
+     */
+    const { inputNormalized, result } = this.runWithTimeout(
+      () => ({
+        inputNormalized: tree.toString(),
+        result: this.simplify(tree, this.simplifyRules).toString(),
+      }),
+      { operation: 'simplify' },
+    );
     this.validateResultSize(result);
     return { result, resultType: 'string', unchanged: inputNormalized === result };
   }
@@ -812,39 +670,57 @@ export class MathService {
   }
 
   /**
-   * Parse once and check the tree before anything evaluates. A parse failure is
-   * `parse_failed`. Multiple statements are detected structurally — math.js parses
+   * Read the caller's `**`, `×`, `÷`, `−`, and `°` as math.js syntax (#47, see
+   * {@link readNotation}), parse the read text once, and check the tree before
+   * anything evaluates; a twin parse then holds each `×` and `**` to scalar operands
+   * (see {@link guardScalarOperators}). A parse failure is `parse_failed`, its
+   * `(char N)` naming the caller's position, and followed by the solver route when
+   * the text calls `roots` or `solve` (#48). Input nested deeper than the call
+   * stack fails with `expression_too_deep` at whichever step recurses past it —
+   * the parse or a walk of the tree (#50). Multiple statements are detected structurally — math.js parses
    * `a; b` and a top-level newline into a `BlockNode` — so `;` inside a matrix or
    * inside either quote style (`"a;b"`, `'a;b'`) is data, transpose `A'` stays an
    * operator, and a real separator is rejected before either statement runs (#32).
    * math.js treats a bare carriage return as a syntax error rather than a
-   * separator; when it is what broke the parse, the input is re-parsed with line
+   * separator; when it is what broke the parse, the read text is re-parsed with line
    * feeds purely to report `multiple_expressions` — the rewritten text is never
    * evaluated. The same tree then gets the stringifier check, the
-   * operation-as-function check (#27), and the notation rename (#24), and yields
-   * the names it uses as values that resolve to functions (#38). Every operation
+   * operation-as-function check (#27), the `roots` / `solve` check (#48), and the
+   * synonym rename (#24, #42), and yields
+   * the names it uses as values that resolve to functions (#38) and any clock call,
+   * which only `evaluate` rejects (see {@link CLOCK_FUNCTIONS}). Every operation
    * starts here, so it also resets the instance's auto unit system (#37).
    */
   private parseExpression(
     expression: string,
     inst: MathInstance,
-  ): { tree: MathNode; functionValues: string[] } {
+  ): { tree: MathNode; functionValues: string[]; clockCall: string | undefined } {
     inst.resetUnitSystem();
+    const reading = readNotation(expression);
     let tree: MathNode;
     try {
-      tree = inst.parse(expression);
+      tree = this.parseText(reading.text, inst);
     } catch (err) {
+      if (err instanceof McpError) throw err;
       if (
-        expression.includes('\r') &&
-        this.parsesAsBlock(expression.replace(/\r\n?/g, '\n'), inst)
+        reading.text.includes('\r') &&
+        this.parsesAsBlock(reading.text.replace(/\r\n?/g, '\n'), inst)
       ) {
         throw this.multipleExpressions();
       }
-      throw declared('parse_failed', `Invalid expression: ${errorMessage(err)}`);
+      const failure = parseErrorMessage(err, reading);
+      if (callsRoutedFunction(expression)) throw routedCall(failure);
+      throw declared('parse_failed', `Invalid expression: ${failure}`);
     }
     if (tree.type === 'BlockNode') throw this.multipleExpressions();
 
-    const { stringifies, operationCall, valueNames } = inspectTree(tree);
+    const {
+      stringifies,
+      operationCall,
+      routedCall: routed,
+      valueNames,
+      clockCall,
+    } = withinStack(() => inspectTree(tree));
     // `.toString()` / `.toLocaleString()` on a function-valued identifier
     // (`cos.toString()`) returns the function's source as a plain string, slipping
     // past validateResultType, which only sees the value after stringification. No
@@ -857,23 +733,31 @@ export class MathService {
         'Converting a function to a string is not allowed — it would expose internal source.',
       );
     }
-    if (operationCall !== undefined) {
-      const variableHint = operationCall === 'derivative' ? ' and pass `variable`' : '';
-      throw declared(
-        'operation_as_function',
-        `"${operationCall}" is an operation, not a function available inside expressions. Send the inner expression as \`expression\` with \`operation: "${operationCall}"\`${variableHint}.`,
-      );
-    }
-    return { tree, functionValues: [...valueNames].filter(inst.isFunction) };
+    if (operationCall !== undefined) throw operationAsFunction(operationCall);
+    if (routed !== undefined) throw routedCall(`Undefined function ${routed}`);
+    withinStack(() =>
+      guardScalarOperators(tree, reading.twin, (twin) => this.parseText(twin, inst)),
+    );
+    return { tree, functionValues: [...valueNames].filter(inst.isFunction), clockCall };
   }
 
   /** Whether `expression` parses to multiple statements. */
   private parsesAsBlock(expression: string, inst: MathInstance): boolean {
     try {
-      return inst.parse(expression).type === 'BlockNode';
+      return this.parseText(expression, inst).type === 'BlockNode';
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Parse text with the instance's parser. Every parse an operation makes goes
+   * through here: the read expression, its `×` / `**` twin, and the line-feed
+   * re-parse. The parser recurses once per nesting level, so input nested past
+   * the call stack fails with `expression_too_deep`.
+   */
+  private parseText(text: string, inst: MathInstance): MathNode {
+    return withinStack(() => inst.parse(text));
   }
 
   private multipleExpressions(): McpError {
@@ -933,7 +817,7 @@ export class MathService {
       );
     }
     if (scan.elements > elementLimit) throw this.resultTooLarge();
-    if (scan.nonFinite) throw declared('undefined_result', UNDEFINED_RESULT_MESSAGE);
+    if (scan.nonFinite) throw undefinedResult(numericType);
     if (scan.inexact) throw declared('fraction_unsupported', FRACTION_FLOAT_MESSAGE);
   }
 
@@ -978,12 +862,19 @@ export class MathService {
    * inspection, formatting, or a symbolic operation). First match wins:
    *
    * 1. Already-classified `McpError`s (result checks) pass through.
-   * 2. Timeout → `evaluation_timeout`.
-   * 3. A size guard (see size-guard.ts) → `result_too_large`.
-   * 4. Fraction mode calling a function with no Fraction implementation (sqrt,
-   *    sin, log, factorial, …) → `fraction_unsupported` (#19); so does Fraction
-   *    mode meeting a float with no equal Fraction (`pi * 2/3`, #35).
-   * 5. fraction.js `Division by Zero`, in any numericType → `undefined_result` (#21).
+   * 2. Timeout → `evaluation_timeout`; an exhausted call stack →
+   *    `expression_too_deep` (#50).
+   * 3. A size guard (see size-guard.ts) → `result_too_large`; a declared error a
+   *    user-defined function's body raised (a `×` or `**` operand error among
+   *    them, notation.ts, #47), re-wrapped by the callback it ran in → that error,
+   *    hint included (see {@link bodyFailure}).
+   * 4. Fraction mode calling a function with no Fraction implementation (sin,
+   *    log, stirlingS2, …) → `fraction_unsupported` (#19); so does an exact
+   *    Fraction function whose result is irrational or complex (`sqrt(2)`,
+   *    `(1/2)!`, see fraction-exact.ts, #49), and Fraction mode meeting a float
+   *    with no equal Fraction (`pi * 2/3`, #35).
+   * 5. fraction.js `Division by Zero`, in any numericType, or an exact Fraction
+   *    function at a pole (`gamma(0)`) → `undefined_result` (#21, #49).
    * 6. Name errors (undefined symbol/function/unit, disabled function, blocked
    *    property) → `parse_failed`.
    * 7. A symbolic operation (simplify, derivative) that cannot process the parsed
@@ -994,6 +885,10 @@ export class MathService {
    * 9. Anything else — arity, domain, singular matrix, dimensions, index →
    *    `evaluation_failed` (#29). Stage decides, not error class: a runtime
    *    `SyntaxError` such as `number("abc")` lands here, never in `parse_failed`.
+   *
+   * In 8 and 9, a float BigNumber will not take implicitly, and under numericType
+   * "BigNumber" a call with no BigNumber implementation, carry a hint written here
+   * (see {@link recoveryHint}); so does `undefined_result` under "BigNumber".
    */
   private classifyFailure(err: unknown, stage: FailureStage): McpError {
     const { numericType } = stage;
@@ -1010,24 +905,32 @@ export class MathService {
         { reason: 'evaluation_timeout' },
       );
     }
+    if (isStackOverflow(err)) return tooDeep();
     const limitError = sizeLimitErrorIn(err);
     if (limitError) {
       return declared('result_too_large', `Size limit exceeded: ${limitError.message}`);
     }
-    if (numericType === 'Fraction' && FRACTION_CONVERSION_ERROR.test(message)) {
+    const carried = bodyFailureIn(message);
+    if (carried) return carried;
+    // Only the Fraction instance carries the exact Fraction functions.
+    const fractionFailure = numericType === 'Fraction' ? fractionFailureIn(err) : undefined;
+    if (
+      fractionFailure === 'fraction_unsupported' ||
+      (numericType === 'Fraction' && FRACTION_CONVERSION_ERROR.test(message))
+    ) {
       return declared('fraction_unsupported', FRACTION_FUNCTION_MESSAGE);
     }
     if (numericType === 'Fraction' && FLOAT_TO_FRACTION_ERROR.test(message)) {
       return declared('fraction_unsupported', FRACTION_FLOAT_MESSAGE);
     }
-    if (FRACTION_DIVISION_BY_ZERO.test(message)) {
-      return declared('undefined_result', UNDEFINED_RESULT_MESSAGE);
+    if (fractionFailure === 'undefined_result' || FRACTION_DIVISION_BY_ZERO.test(message)) {
+      return undefinedResult(numericType);
     }
     if (NAME_ERROR.test(message)) {
       return declared('parse_failed', `Invalid expression: ${message}`);
     }
     if (stage.operation !== 'evaluate') return symbolicFailure(stage, message);
-    const data = (err as { data?: { category?: unknown; actual?: unknown } } | null)?.data;
+    const data = (err as { data?: TypedErrorData } | null)?.data;
     const category = data?.category;
     if (
       category === 'wrongType' &&
@@ -1036,10 +939,11 @@ export class MathService {
     ) {
       return functionAsValue(stage.functionValues, message);
     }
+    const hint = recoveryHint(message, data, stage.numericType);
     if (category === 'wrongType' || TYPE_MISMATCH_ERROR.test(message)) {
-      return declared('type_mismatch', `Type mismatch: ${message}`);
+      return declared('type_mismatch', `Type mismatch: ${message}`, hint);
     }
-    return declared('evaluation_failed', `Evaluation failed: ${message}`);
+    return declared('evaluation_failed', `Evaluation failed: ${message}`, hint);
   }
 }
 
@@ -1088,11 +992,9 @@ function functionAsValue(names: string[], detail: string): McpError {
     const unit = FUNCTION_SHADOWED_UNITS[name];
     return unit ? `"${name}" is a function, not the unit "${unit}"` : `"${name}" is a function`;
   });
-  const unitHints = names.flatMap((name) => {
+  const units = names.flatMap((name) => {
     const unit = FUNCTION_SHADOWED_UNITS[name];
-    return unit
-      ? [`"${name}" names a function here; for the unit, write ${unit} (\`5 ${unit}\`).`]
-      : [];
+    return unit ? [{ name, unit }] : [];
   });
   return validationError(
     `Type mismatch: a function was used as a value${described.length ? ` (${described.join('; ')})` : ''}. ${detail}`,
@@ -1100,20 +1002,157 @@ function functionAsValue(names: string[], detail: string): McpError {
       reason: 'type_mismatch',
       recovery: {
         hint: [
-          ...unitHints,
-          'To call a function, use parentheses (`sin(1)`, `f(3)`); a function name or definition next to a value multiplies it instead.',
+          ...units.map(
+            ({ name, unit }) =>
+              `"${name}" names a function here; for the unit, write ${unit} (5 ${unit}).`,
+          ),
+          'To call a function, use parentheses (sin(1), f(3)); a function name or definition next to a value multiplies it instead.',
         ].join(' '),
       },
     },
+    { literals: [...units.map(({ unit }) => `5 ${unit}`), 'sin(1)', 'f(3)'] },
   );
 }
 
 /**
- * A validation error carrying `reason`. The framework fills the recovery hint the
- * tool's contract entry declares for that reason on the way to the client.
+ * `operation_as_function` for a call to `evaluate`, `simplify`, or `derivative`
+ * inside an expression. The hint is written here, naming the operation, and the
+ * message repeats it, so `content[]` shows it once (#27).
  */
-function declared(reason: string, message: string): McpError {
-  return validationError(message, { reason });
+function operationAsFunction(operation: string): McpError {
+  const setting = `operation: "${operation}"`;
+  const hint =
+    operation === 'derivative'
+      ? `Send its first argument as expression and its second as variable, with ${setting}.`
+      : `Send its argument as expression, with ${setting}.`;
+  return validationError(
+    `"${operation}" is an operation, not a function available inside expressions. ${hint}`,
+    { reason: 'operation_as_function', recovery: { hint } },
+    { literals: ['expression', 'variable', setting] },
+  );
+}
+
+/**
+ * `parse_failed` for a clock call under `evaluate`. The contract hint is about names
+ * and scope, which a clock call cannot be fixed with, so the hint is written here.
+ */
+function clockUnavailable(name: string): McpError {
+  return validationError(`${name}() is not available: the calculator reads no clock.`, {
+    reason: 'parse_failed',
+    recovery: {
+      hint: `Pass the current date as a quoted YYYY-MM-DD string where ${name}() would go, e.g. dateDiff("2026-10-17", "2026-12-25").`,
+    },
+  });
+}
+
+/** The `data` a math.js typed-function error carries (`wrongType` and its kin). */
+interface TypedErrorData {
+  actual?: unknown;
+  category?: unknown;
+  expected?: unknown;
+}
+
+/**
+ * The hint a failure gets in place of its contract hint, where that one points
+ * the wrong way: a float BigNumber will not take implicitly, in any numericType,
+ * and under numericType "BigNumber" a call with no BigNumber implementation —
+ * a {@link NO_BIGNUMBER_IMPLEMENTATION} or {@link BIGNUMBER_ZETA_ERROR} message
+ * (also re-wrapped by a callback), or a typed function that wanted a number where
+ * it got a BigNumber (`erf`). A `wrongType` that expected neither, such as a unit
+ * (`5 kg + 3`), keeps the contract hint.
+ */
+function recoveryHint(
+  message: string,
+  data: TypedErrorData | undefined,
+  numericType: NumericType,
+): ThrowSiteHint | undefined {
+  if (FLOAT_TO_BIGNUMBER_ERROR.test(message)) return FLOAT_TO_BIGNUMBER_HINT;
+  if (numericType !== 'BigNumber') return undefined;
+  const lists = (value: unknown, type: string) => Array.isArray(value) && value.includes(type);
+  // wrongType's `expected` lists only types the argument is not, so never BigNumber here.
+  const wantsNumber =
+    data?.category === 'wrongType' &&
+    lists(data.actual, 'BigNumber') &&
+    lists(data.expected, 'number');
+  const unimplemented =
+    NO_BIGNUMBER_IMPLEMENTATION.test(message) || message.includes(BIGNUMBER_ZETA_ERROR);
+  return wantsNumber || unimplemented ? NO_BIGNUMBER_HINT : undefined;
+}
+
+/** `undefined_result` for a non-finite value, with {@link BIGNUMBER_UNDEFINED_HINT} under "BigNumber". */
+function undefinedResult(numericType: NumericType | undefined): McpError {
+  return declared(
+    'undefined_result',
+    UNDEFINED_RESULT_MESSAGE,
+    numericType === 'BigNumber' ? BIGNUMBER_UNDEFINED_HINT : undefined,
+  );
+}
+
+/**
+ * Code the tool's contract hints quote, by reason; the contract builds its hint
+ * text from these. A throw that leaves the hint to the contract declares them as
+ * literals, so `content[]` renders them as code rather than escaped text.
+ */
+export const CONTRACT_HINT_CODE = {
+  type_mismatch: ['5 kg + 3 kg', 'number(5 kg, "kg") + 3'],
+  expression_too_deep: ['sum([…])', 'prod([…])'],
+} as const;
+
+/** A recovery hint written at the throw site, in place of the contract's, and the code it quotes. */
+interface ThrowSiteHint {
+  /** Rendered as code spans in `content[]`; `structuredContent` carries `text` as written. */
+  readonly literals?: readonly string[];
+  readonly text: string;
+}
+
+/**
+ * A validation error carrying `reason`. Without a `hint`, the framework fills the
+ * recovery hint the tool's contract entry declares for that reason on the way to
+ * the client, and the code that hint quotes is declared as literals; a `hint`
+ * replaces it, with its own literals.
+ */
+function declared(reason: string, message: string, hint?: ThrowSiteHint): McpError {
+  const code: Readonly<Record<string, readonly string[]>> = CONTRACT_HINT_CODE;
+  const contractCode = Object.hasOwn(code, reason) ? code[reason] : undefined;
+  const literals = hint ? hint.literals : contractCode;
+  return validationError(
+    message,
+    { reason, ...(hint && { recovery: { hint: hint.text } }) },
+    literals && { literals },
+  );
+}
+
+/** `expression_too_deep`: a step recursing over the expression exhausted the call stack. */
+function tooDeep(): McpError {
+  return declared(
+    'expression_too_deep',
+    'Expression is nested too deeply: working through it exhausted the call stack.',
+  );
+}
+
+/**
+ * Run a step outside the timed call that recurses over the expression or its
+ * tree — parsing or walking it — and fail with `expression_too_deep` if it
+ * exhausts the call stack.
+ */
+function withinStack<T>(step: () => T): T {
+  try {
+    return step();
+  } catch (err) {
+    if (isStackOverflow(err)) throw tooDeep();
+    throw err;
+  }
+}
+
+/**
+ * Whether `err` is the call stack running out: the engine's `RangeError`, or the
+ * `TypeError` a math.js callback re-wraps it in. The type is checked as well as
+ * the message, since a decimal.js error ends with the caller's string
+ * (`bignumber("Maximum call stack size exceeded")`).
+ */
+function isStackOverflow(err: unknown): boolean {
+  if (err instanceof RangeError) return STACK_OVERFLOW.test(err.message);
+  return err instanceof TypeError && REWRAPPED_STACK_OVERFLOW.test(err.message);
 }
 
 /** Message of a thrown value, whatever its type. */
@@ -1135,136 +1174,3 @@ export function getMathService(): MathService {
   if (!_service) throw new Error('MathService not initialized — call initMathService() in setup()');
   return _service;
 }
-
-// --- Help content ---
-
-const HELP_CONTENT = `# Calculator Help
-
-## Operators
-
-| Operator | Description | Example |
-|:---------|:------------|:--------|
-| + | Addition | 2 + 3 |
-| - | Subtraction | 5 - 2 |
-| * | Multiplication | 3 * 4 |
-| / | Division | 10 / 3 |
-| ^ | Exponentiation | 2 ^ 10 |
-| % | Modulus | 17 % 5 |
-| ! | Factorial | 5! |
-
-## Constants
-
-| Name | Value | Description |
-|:-----|:------|:------------|
-| pi | 3.14159... | Ratio of circumference to diameter |
-| e | 2.71828... | Euler's number |
-| phi | 1.61803... | Golden ratio |
-| i | sqrt(-1) | Imaginary unit |
-| Infinity | Infinity | Positive infinity — intermediate values only |
-| NaN | NaN | Not a number — intermediate values only |
-| true | true | Boolean true |
-| false | false | Boolean false |
-
-\`Infinity\` and \`NaN\` work inside an expression (\`1/Infinity\` => \`0\`, \`isNaN(NaN)\` => \`true\`), but a result that is Infinity, -Infinity, or NaN anywhere in it fails with \`undefined_result\`: \`Infinity\` and \`NaN\` on their own fail.
-
-## Functions
-
-> **Standard notation accepted:** \`ln\` works as natural log (canonical \`log\`), and the \`arc*\` inverse-trig names (\`arcsin\`, \`arccos\`, \`arctan\`, \`arcsinh\`, …) work as their \`a*\` equivalents (\`asin\`, \`acos\`, \`atan\`, …). Both forms are valid across evaluate, simplify, and derivative.
-
-### Arithmetic
-abs, ceil, floor, round, sign, sqrt, cbrt, exp, expm1, log (also: ln), log2, log10, log1p, pow, mod, gcd, lcm, nthRoot, hypot, fix, cube, square, unaryMinus, unaryPlus
-
-### Trigonometry
-sin, cos, tan, asin (arcsin), acos (arccos), atan (arctan), atan2, sinh, cosh, tanh, asinh (arcsinh), acosh (arccosh), atanh (arctanh), sec, csc, cot, asec (arcsec), acsc (arccsc), acot (arccot), sech, csch, coth, asech (arcsech), acsch (arccsch), acoth (arccoth)
-
-### Statistics
-mean (aliases: average, avg), median, mode, std (aliases: stdev, stddev), variance, min, max, sum, prod, quantileSeq, mad, count (aliases: length, len)
-
-\`std\` and \`variance\` (and the \`stdev\`/\`stddev\` aliases) return the sample statistic by default. An optional normalization string after the array or matrix picks the divisor:
-
-| Normalization | Divisor | \`std([2, 4, 6], …)\` | \`variance([2, 4, 6], …)\` |
-|:--------------|:--------|:--------------------|:-------------------------|
-| \`"unbiased"\` (default, sample) | n − 1 | \`2\` | \`4\` |
-| \`"uncorrected"\` (population) | n | \`1.632993161855452\` | \`2.6666666666666665\` |
-| \`"biased"\` | n + 1 | \`1.4142135623730951\` | \`2\` |
-
-\`std([2, 4, 6], "uncorrected")\` => \`1.632993161855452\`. The normalization must follow an array or matrix: \`std(2, 4, 6, "uncorrected")\` fails.
-
-- \`mad\` is the unscaled median absolute deviation (no 1.4826 factor): \`mad([1, 2, 3, 4, 100])\` => \`1\`
-- \`quantileSeq\` interpolates linearly: \`quantileSeq([1, 2, 3, 4], 0.25)\` => \`1.75\`. A third argument \`true\` declares the data already sorted and skips sorting, so unsorted data then gives a wrong answer: \`quantileSeq([4, 3, 2, 1], 0.25, true)\` => \`3.25\`
-- \`mode\` always returns an array, even with a single mode: \`mode([1, 2, 2, 3])\` => \`[2]\`
-
-### Matrix
-det, inv, transpose, trace, zeros, ones, identity, diag, size, reshape, flatten, concat, sort, cross, dot, eigs, expm, sqrtm, kron, pinv, range
-
-### Combinatorics
-factorial, gamma, permutations (aliases: permute, nPr), combinations (aliases: choose, nCr), catalan, bellNumbers, stirlingS2, composition, multinomial
-
-### Complex Numbers
-re, im, conj, arg, complex
-
-### Logical
-and, or, xor, not
-
-### Comparison
-equal, unequal, larger, largerEq, smaller, smallerEq, compare, deepEqual
-
-### Unit Conversion
-Syntax: \`value unit to targetUnit\`
-
-Common units: m, cm, mm, km, inch, ft, yard, mile, lightyear (ly), kg, g, lb, oz, s, minute, hour, day, mph, knot (kt), celsius, fahrenheit, kelvin, liter, gallon, joule, watt, newton, Pa, bar, psi, radian, degree
-
-\`min\` is the minimum function, not minutes, so write \`minute\`: \`5 minute to s\` => \`300 s\`. Pascals are \`Pa\`: \`1 bar to Pa\` => \`100000 Pa\`.
-
-## Syntax Examples
-
-Each example shows the exact result string \`calculate\` returns.
-
-### Basic arithmetic
-\`2 + 3 * 4\` => \`14\`
-
-### Functions
-\`sqrt(144)\` => \`12\`
-\`sin(pi / 2)\` => \`1\`
-\`log(1000, 10)\` => \`2.9999999999999996\` (floating-point rounding); with \`precision: 10\`, \`log(1000, 10)\` => \`3\`
-
-### Variables (scope parameter, evaluate only)
-Provide scope: { "x": 5, "y": 3 }
-Expression: \`x^2 + y\` => \`28\`
-
-### Matrices
-\`[1, 2; 3, 4]\` — 2x2 matrix (\`;\` separates rows)
-\`det([1, 2; 3, 4])\` => \`-2\`
-\`inv([1, 2; 3, 4])\` => \`[[-2, 1], [1.5, -0.5]]\`
-
-### Complex numbers
-\`2 + 3i\` => \`2 + 3i\`
-\`sqrt(-4)\` => \`2i\`
-\`abs(3 + 4i)\` => \`5\`
-\`log(-1)\` => \`3.141592653589793i\` — the log of a negative number is complex, not undefined
-
-### Unit conversion
-\`5 kg to lbs\` => \`11.023113109243878 lbs\`
-\`100 celsius to fahrenheit\` => \`211.99999999999997 fahrenheit\`
-\`1 mile to km\` => \`1.609344 km\`
-
-> **Note:** Unit conversions use IEEE 754 floating-point arithmetic, so results can carry rounding artifacts like the one above. Use the \`precision\` parameter to round: with \`precision: 6\`, \`100 celsius to fahrenheit\` => \`212 fahrenheit\`.
-
-### Precision
-The \`precision\` parameter (1\u201316 significant digits) rounds numeric results: with \`precision: 4\`, \`1 / 3\` => \`0.3333\`. Fraction results always print exactly, and symbolic operations ignore it.
-
-### Operations
-
-- **evaluate** (default): Compute a numeric result. The \`numericType\` parameter picks the number representation:
-  - \`"number"\` (default): 64-bit IEEE 754 float — fastest, about 16 significant digits. A value past about 1.8e308 overflows to Infinity and fails with \`undefined_result\` (\`171!\`, \`2^1024\`, \`exp(1000)\`).
-  - \`"BigNumber"\`: decimal with 64 significant digits and a much wider exponent range; slower than \`"number"\`. Use it when a value overflows the float range: with \`numericType: "BigNumber"\`, \`2^2000\` => \`1.148130695274254524232833201177681984022317702088695200477642737e+602\`. Results are 64-digit approximations, not exact: \`10000! / 9999!\` => \`9999.999999999999999999999999999999999999999999999999999999999996\`, and adding \`precision: 16\` rounds it, \`10000! / 9999!\` => \`10000\`.
-  - \`"Fraction"\`: exact rational arithmetic — \`0.1 + 0.2\` => \`3/10\`, \`1/3 + 1/6\` => \`1/2\`. An expression fails with \`fraction_unsupported\` when its result has no exact rational value (\`sqrt(2)\`, \`sin(1)\`, \`log(3)\`), when it calls a function Fraction mode cannot compute, even for a rational result (\`sqrt(4)\`, \`5!\`, \`combinations(5, 2)\`), or when it uses a value Fraction mode holds only as a rounded 64-bit float (\`pi\`, \`e\`, \`2^(1/2)\`, \`sin(pi)\`, a complex number with a non-integer part, \`number(x)\`, or \`random()\`); use \`"number"\` or \`"BigNumber"\` for those. A unit conversion with an irrational factor returns a close rational approximation, not an exact value: \`30 deg to rad\` => \`191068/364913 rad\`. Whole-number indexes and dimensions work as in \`"number"\`: \`[1, 2, 3][2]\` => \`2/1\`, \`sum([1, 2; 3, 4], 1)\` => \`[4/1, 6/1]\`.
-
-  An \`undefined_result\` caused by overflow (large powers, factorials, \`exp\`) can be retried with \`numericType: "BigNumber"\`. Division by zero, \`0/0\`, and \`log(0)\` are undefined in every numeric type, and BigNumber does not change that.
-
-- **simplify**: Reduce an algebraic expression symbolically: \`2x + 3x\` => \`5 * x\`, \`sin(x)^2 + cos(x)^2\` => \`1\`. Supports algebraic rules and common trigonometric identities (Pythagorean, double-angle, tan/sec/csc/cot relationships). \`scope\`, \`precision\`, and \`numericType\` are ignored.
-
-  **Known limits:** The built-in simplifier does not perform polynomial factoring or rational cancellation: \`(x^2 - 1) / (x - 1)\` => \`(x ^ 2 - 1) / (x - 1)\`, returned with \`unchanged: true\`. For these cases, rewrite by hand or use \`evaluate\` with a numeric scope.
-
-- **derivative**: Compute a symbolic derivative; requires the \`variable\` parameter. With \`variable: "x"\`, \`x^2\` => \`2 * x\`. \`scope\`, \`precision\`, and \`numericType\` are ignored.
-`;

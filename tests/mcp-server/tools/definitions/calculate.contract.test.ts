@@ -31,15 +31,18 @@ function recoveryFor(reason: string): string {
   return entry.recovery;
 }
 
-/** Assert a failure's code, reason, and recovery hint on both response surfaces. */
+/**
+ * Assert a failure's code, reason, and recovery hint on both response surfaces:
+ * the contract's hint for the reason, or `hint` where the throw site writes its own.
+ */
 async function expectWireError(
   input: ToolInput,
   code: JsonRpcErrorCode,
   reason: string,
+  hint = recoveryFor(reason),
 ): Promise<string> {
   const result = await runToolContract(calculateTool, input);
   expect(result.isError).toBe(true);
-  const hint = recoveryFor(reason);
   expect(result.structuredContent).toMatchObject({
     error: { code, data: { reason, recovery: { hint } } },
   });
@@ -183,6 +186,21 @@ describe('calculate response contract', () => {
       resultType: 'Fraction',
     },
     {
+      input: { expression: '10!', numericType: 'Fraction' },
+      expected: '3628800/1',
+      resultType: 'Fraction',
+    },
+    {
+      input: { expression: 'sqrt(9/4)', numericType: 'Fraction' },
+      expected: '3/2',
+      resultType: 'Fraction',
+    },
+    {
+      input: { expression: 'std([1, 2; 3, 6; 5, 10], 1)', numericType: 'Fraction' },
+      expected: '[2/1, 4/1]',
+      resultType: 'DenseMatrix',
+    },
+    {
       input: { expression: 'sum([1, 2; 3, 4], 1)' },
       expected: '[4, 6]',
       resultType: 'DenseMatrix',
@@ -313,11 +331,13 @@ describe('calculate response contract', () => {
         input: { expression: 'derivative("0.2*x + 5", "x")' },
         reason: 'operation_as_function',
         detail: 'operation: "derivative"',
+        hint: 'Send its first argument as expression and its second as variable, with operation: "derivative".',
       },
       {
         input: { expression: 'simplify("2*x")', operation: 'derivative', variable: 'x' },
         reason: 'operation_as_function',
         detail: '"simplify"',
+        hint: 'Send its argument as expression, with operation: "simplify".',
       },
       { input: { expression: '5 kg + 3' }, reason: 'type_mismatch', detail: 'addScalar' },
       { input: { expression: '2^(3 m)' }, reason: 'type_mismatch', detail: 'pow' },
@@ -332,6 +352,8 @@ describe('calculate response contract', () => {
         input: { expression: '1 / 0', numericType: 'BigNumber' },
         reason: 'undefined_result',
         detail: 'non-finite',
+        // The contract hint retries with BigNumber, the mode already selected.
+        hint: 'Division by zero, 0/0, and log(0) are undefined in every numericType, so fix the expression. Under numericType "BigNumber" an overflow has passed a decimal exponent of 9e15, so compute the logarithm of the value instead; an inverse trig or hyperbolic function outside its real domain (asin(2), acosh(0.5)) is NaN here, while numericType "number" returns its complex value.',
       },
       {
         input: { expression: '1 / 0', numericType: 'Fraction' },
@@ -345,7 +367,7 @@ describe('calculate response contract', () => {
       },
       { input: { expression: '171!' }, reason: 'undefined_result', detail: 'overflowed' },
       {
-        input: { expression: 'sqrt(4)', numericType: 'Fraction' },
+        input: { expression: 'log2(8)', numericType: 'Fraction' },
         reason: 'fraction_unsupported',
         detail: 'calls a function Fraction mode cannot compute',
       },
@@ -353,6 +375,26 @@ describe('calculate response contract', () => {
         input: { expression: 'sqrt(2)', numericType: 'Fraction' },
         reason: 'fraction_unsupported',
         detail: 'no exact rational value',
+      },
+      {
+        input: { expression: '(1/2)!', numericType: 'Fraction' },
+        reason: 'fraction_unsupported',
+        detail: 'no exact rational value',
+      },
+      {
+        input: { expression: 'gamma(0)', numericType: 'Fraction' },
+        reason: 'undefined_result',
+        detail: 'non-finite',
+      },
+      {
+        input: { expression: 'combinations(3, 5)', numericType: 'Fraction' },
+        reason: 'evaluation_failed',
+        detail: 'k must be less than or equal to n',
+      },
+      {
+        input: { expression: '300000!', numericType: 'Fraction' },
+        reason: 'result_too_large',
+        detail: 'factorial() would build 1,512,852 characters',
       },
       {
         input: { expression: 'pi', numericType: 'Fraction' },
@@ -367,7 +409,7 @@ describe('calculate response contract', () => {
       {
         input: { expression: '2^(1/2)', numericType: 'Fraction' },
         reason: 'fraction_unsupported',
-        detail: 'rounded 64-bit float',
+        detail: 'no exact rational value',
       },
       {
         input: { expression: '[[1, 2], [3, pi]]', numericType: 'Fraction' },
@@ -400,7 +442,7 @@ describe('calculate response contract', () => {
         detail: 'prod(A, dim) is not yet supported',
       },
       {
-        input: { expression: 'std([1, 2; 3, 6; 5, 10], 1)', numericType: 'Fraction' },
+        input: { expression: 'std([1, 2; 3, 4], 1)', numericType: 'Fraction' },
         reason: 'fraction_unsupported',
         detail: 'calls a function Fraction mode cannot compute',
       },
@@ -417,9 +459,9 @@ describe('calculate response contract', () => {
       },
       { input: { expression: '   ' }, reason: 'empty_expression', detail: 'cannot be empty' },
       {
-        input: { expression: '1+'.repeat(700) },
+        input: { expression: '1+'.repeat(2001) },
         reason: 'expression_too_long',
-        detail: 'exceeds maximum length',
+        detail: 'exceeds maximum length of 4000',
       },
       {
         input: { expression: 'x', scope: { constructor: 0 } },
@@ -428,10 +470,13 @@ describe('calculate response contract', () => {
       },
       { input: { expression: 'range(1, 1/0)' }, reason: 'result_too_large', detail: 'range()' },
       { input: { expression: 'zeros(33334)' }, reason: 'result_too_large', detail: '100000' },
-    ] as const)('$reason for $input.expression', async ({ input, reason, detail }) => {
-      const text = await expectWireError(input, JsonRpcErrorCode.ValidationError, reason);
-      expect(text).toContain(detail);
-    });
+    ] as Array<{ input: ToolInput; reason: string; detail: string; hint?: string }>)(
+      '$reason for $input.expression',
+      async ({ input, reason, detail, hint }) => {
+        const text = await expectWireError(input, JsonRpcErrorCode.ValidationError, reason, hint);
+        expect(text).toContain(detail);
+      },
+    );
 
     it('evaluation_failed with a symbolic hint for a function with no derivative rule', async () => {
       const result = await runToolContract(calculateTool, {

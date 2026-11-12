@@ -9,6 +9,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { getServerConfig } from '@/config/server-config.js';
 import { helpResource } from '@/mcp-server/resources/definitions/help.resource.js';
 import { calculateTool } from '@/mcp-server/tools/definitions/calculate.tool.js';
+import { canonicalName } from '@/services/math/function-names.js';
 import { initMathService } from '@/services/math/math-service.js';
 
 beforeAll(() => {
@@ -31,7 +32,7 @@ type CallOptions = {
   precision?: number;
 };
 
-/** What `calculate` returns for an expression: the result fields, or the failure reason. */
+/** What `calculate` returns for an expression: the result fields, or the failure reason and message. */
 function outcome(expression: string, options: CallOptions = {}) {
   try {
     const output = calculateTool.handler(
@@ -40,7 +41,7 @@ function outcome(expression: string, options: CallOptions = {}) {
     ) as { result: string; resultType: string };
     return { result: output.result, resultType: output.resultType };
   } catch (err) {
-    if (err instanceof McpError) return { reason: err.data?.reason };
+    if (err instanceof McpError) return { reason: err.data?.reason, message: err.message };
     throw err;
   }
 }
@@ -58,6 +59,33 @@ function listUnder(heading: string): string {
  */
 const EXAMPLE_OPTIONS: Record<string, CallOptions> = {
   'x^2 + y => 28': { scope: { x: 5, y: 3 } },
+  '(x + y) - x => 1': { numericType: 'BigNumber', scope: { x: 1e16, y: 1 } },
+  'x * 3 => 3/10': { numericType: 'Fraction', scope: { x: 0.1 } },
+  'lusolve([3, 2; 1, -1], [12; 1]) => [[14/5], [9/5]]': { numericType: 'Fraction' },
+  '50! => 30414093201713378043612608166064768844377641568960512000000000000/1': {
+    numericType: 'Fraction',
+  },
+  'combinations(10, 3) => 120/1': { numericType: 'Fraction' },
+  'integrate(exp(-x^2), x, 0, 1) => 0.746824132812': { precision: 12 },
+  'integrate(1/x, x, 1, e) => 1': { precision: 15 },
+  'integrate(a*x^2, x, 0, 3) => 18': { scope: { a: 2 } },
+  'integrate(x^2, x, 1, 0) => -0.333333333333333': { precision: 15 },
+  'log10(integrate(exp(-x^2), x, 0, 1)) => -0.126781656741': { precision: 12 },
+  'integrate(1/sqrt(x), x, 0, 1) => 2': { precision: 9 },
+  'integrate(exp(-1e6 (x - 0.5)^2), x, 0, 1) => 0.00177245': { precision: 6 },
+  '10000! / 9999! => 10000/1': { numericType: 'Fraction' },
+  '5! => 120/1': { numericType: 'Fraction' },
+  'sqrt(9/4) => 3/2': { numericType: 'Fraction' },
+  'cbrt(-8) => -2/1': { numericType: 'Fraction' },
+  '(9/4)^(3/2) => 27/8': { numericType: 'Fraction' },
+  '(-2/3)^(-3) => -27/8': { numericType: 'Fraction' },
+  '[4, 9/4] .^ (1/2) => [2/1, 3/2]': { numericType: 'Fraction' },
+  '((2^61-1)^2)^(1/2) => 2305843009213693951/1': { numericType: 'Fraction' },
+  'sqrtm([4, 0; 0, 9]) => [[2/1, 0/1], [0/1, 3/1]]': { numericType: 'Fraction' },
+  '(1+2i)^2 => -3 + 4i': { numericType: 'Fraction' },
+  'sqrt(5+12i) => 3 + 2i': { numericType: 'Fraction' },
+  'cbrt(2+11i) => 2 + i': { numericType: 'Fraction' },
+  '3*x**2 + 5*x => 6 * x + 5': { operation: 'derivative', variable: 'x' },
   'log(1000, 10) => 3': { precision: 10 },
   '100 celsius to fahrenheit => 212 fahrenheit': { precision: 6 },
   '1 / 3 => 0.3333': { precision: 4 },
@@ -131,25 +159,45 @@ describe('help content matches callable behavior (#22)', () => {
       'Trigonometry',
       'Statistics',
       'Matrix',
+      'Polynomial Roots',
       'Combinatorics',
+      'Dates',
+      'Integrals',
       'Complex Numbers',
       'Logical',
       'Comparison',
     ];
     for (const section of sections) {
       const line = listUnder(section);
-      const aliases = [...line.matchAll(/\(aliases: ([^)]+)\)/g)].flatMap(([, list = '']) =>
-        list.split(', '),
+      const aliasLists = [...line.matchAll(/(\w+) \(aliases: ([^)]+)\)/g)].map(
+        ([, canonical = '', list = '']) => ({ canonical, aliases: list.split(', ') }),
       );
-      const names = [...line.replace(/\([^)]*\)/g, '').split(','), ...aliases]
+      for (const { canonical, aliases } of aliasLists) {
+        for (const alias of aliases) expect(canonicalName(alias), alias).toBe(canonical);
+      }
+      const names = [
+        ...line.replace(/\([^)]*\)/g, '').split(','),
+        ...aliasLists.flatMap(({ aliases }) => aliases),
+      ]
         .map((name) => name.trim())
         .filter(Boolean);
       for (const name of names) {
         // `not` is also a parser keyword, so it cannot be named bare; call it instead.
-        const probe = name === 'not' ? outcome('not(true)') : outcome(`typeOf(${name})`);
-        expect(probe, `${section}: ${name}`).toMatchObject({
-          result: name === 'not' ? 'false' : '"function"',
-        });
+        if (name === 'not') {
+          expect(outcome('not(true)'), `${section}: not`).toMatchObject({ result: 'false' });
+          continue;
+        }
+        const canonical = canonicalName(name);
+        const probe = outcome(`typeOf(${name})`);
+        if (canonical !== undefined && probe.reason !== undefined) {
+          // A call-only synonym (`eig`, `integral`) is renamed only where it is called,
+          // so it has no value for typeOf: a call must fail as the canonical call does.
+          const call = outcome(`${name}()`);
+          expect(call, `${section}: ${name}()`).not.toMatchObject({ reason: 'parse_failed' });
+          expect(call, `${section}: ${name}()`).toEqual(outcome(`${canonical}()`));
+          continue;
+        }
+        expect(probe, `${section}: ${name}`).toMatchObject({ result: '"function"' });
       }
     }
   });
@@ -165,18 +213,37 @@ describe('help content matches callable behavior (#22)', () => {
     ['sqrt(2)', { numericType: 'Fraction' }, 'fraction_unsupported'],
     ['sin(1)', { numericType: 'Fraction' }, 'fraction_unsupported'],
     ['log(3)', { numericType: 'Fraction' }, 'fraction_unsupported'],
-    ['sqrt(4)', { numericType: 'Fraction' }, 'fraction_unsupported'],
-    ['5!', { numericType: 'Fraction' }, 'fraction_unsupported'],
-    ['combinations(5, 2)', { numericType: 'Fraction' }, 'fraction_unsupported'],
+    ['log2(8)', { numericType: 'Fraction' }, 'fraction_unsupported'],
+    ['stirlingS2(5, 2)', { numericType: 'Fraction' }, 'fraction_unsupported'],
     ['pi', { numericType: 'Fraction' }, 'fraction_unsupported'],
     ['e', { numericType: 'Fraction' }, 'fraction_unsupported'],
     ['2^(1/2)', { numericType: 'Fraction' }, 'fraction_unsupported'],
+    ['(-8)^(1/3)', { numericType: 'Fraction' }, 'fraction_unsupported'],
     ['sin(pi)', { numericType: 'Fraction' }, 'fraction_unsupported'],
     ['random()', { numericType: 'Fraction' }, 'fraction_unsupported'],
+    ['exp(1e17)', { numericType: 'BigNumber' }, 'undefined_result'],
+    ['asin(2)', { numericType: 'BigNumber' }, 'undefined_result'],
+    ['acosh(0.5)', { numericType: 'BigNumber' }, 'undefined_result'],
+    ['gamma(0.5)', { numericType: 'BigNumber' }, 'evaluation_failed'],
     ['std(2, 4, 6, "uncorrected")', {}, 'type_mismatch'],
+    ['30°N', {}, 'parse_failed'],
+    ['[1, 2; 3, 4] ** 2', {}, 'type_mismatch'],
+    ['[1, 0, 0] × [0, 1, 0]', {}, 'type_mismatch'],
+    ['polynomialRoot(1, 2, 3, 4, 5)', {}, 'evaluation_failed'],
+    ['now()', {}, 'parse_failed'],
+    ['today()', {}, 'parse_failed'],
+    ['integrate(1/x, x, -1, 1)', {}, 'evaluation_failed'],
+    ['integrate(1/x, x, 0, 1)', {}, 'evaluation_failed'],
+    ['range(1, 2000000)', {}, 'result_too_large'],
+    ['range(1, 2, 0)', {}, 'evaluation_failed'],
+    ['300000!', { numericType: 'Fraction' }, 'result_too_large'],
+    ['2^(10^7)', { numericType: 'Fraction' }, 'result_too_large'],
+    ['2^(10^6)', { numericType: 'Fraction' }, 'result_too_large'],
+    ['stirlingS2(1413, 3)', {}, 'result_too_large'],
+    ['bernoulli(1002)', {}, 'result_too_large'],
   ] as const)('shows %s, which fails as the help says', (expression, options, reason) => {
     expect(helpText()).toContain(`\`${expression}\``);
-    expect(outcome(expression, options)).toEqual({ reason });
+    expect(outcome(expression, options)).toMatchObject({ reason });
   });
 
   it('makes no claim that Fraction mode returns a float', () => {
@@ -228,11 +295,6 @@ describe('help statistics conventions (#23)', () => {
     expect(help).toContain('`mad` is the unscaled median absolute deviation');
     expect(help).toContain('`quantileSeq` interpolates linearly');
     expect(help).toContain('`mode` always returns an array');
-  });
-
-  it('does not advertise a dimension together with a normalization', () => {
-    expect(helpText()).not.toMatch(/(std|variance)\([^)]*dim[^)]*normalization/);
-    expect(helpText()).not.toMatch(/\], \d+, "(uncorrected|biased|unbiased)"\)/);
   });
 });
 

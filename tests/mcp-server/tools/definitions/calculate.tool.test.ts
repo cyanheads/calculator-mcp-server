@@ -4,7 +4,7 @@
  */
 
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { getServerConfig } from '@/config/server-config.js';
 import { calculateTool } from '@/mcp-server/tools/definitions/calculate.tool.js';
@@ -21,6 +21,16 @@ function mockCtx() {
 
 function call(input: Record<string, unknown>) {
   return Promise.resolve(calculateTool.handler(parse(input), mockCtx()));
+}
+
+/** A result's text blocks, read as a CommonMark client reads them. */
+function textOf(result: Awaited<ReturnType<typeof runToolContract>>): string {
+  return markdownText(
+    result.content
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text)
+      .join('\n'),
+  );
 }
 
 function expectMcpError(fn: () => unknown, code: JsonRpcErrorCode, reason: string): void {
@@ -295,9 +305,9 @@ describe('calculate tool', () => {
 
   describe('error handling', () => {
     it('rejects expressions exceeding max length', () => {
-      const longExpr = '1 +'.repeat(500);
+      const longExpr = '1 +'.repeat(1334);
       expect(() => calculateTool.handler(parse({ expression: longExpr }), mockCtx())).toThrow(
-        'exceeds maximum length',
+        'exceeds maximum length of 4000 characters',
       );
     });
 
@@ -473,7 +483,7 @@ describe('calculate tool', () => {
 
     it('expression_too_long', () => {
       expectMcpError(
-        () => calculateTool.handler(parse({ expression: '1+'.repeat(700) }), mockCtx()),
+        () => calculateTool.handler(parse({ expression: '1+'.repeat(2001) }), mockCtx()),
         JsonRpcErrorCode.ValidationError,
         'expression_too_long',
       );
@@ -794,5 +804,237 @@ describe('calculate tool', () => {
         text: expect.not.stringContaining('Precision'),
       });
     });
+  });
+});
+
+/** Date functions (#51) and integrate (#52) through the production rendering path. */
+describe('dates and integrals on both response surfaces', () => {
+  type ToolInput = Parameters<typeof runToolContract<typeof calculateTool>>[1];
+
+  /** The recovery the tool's contract declares for a reason. */
+  function declaredRecovery(reason: string): string {
+    const entry = calculateTool.errors?.find((e) => e.reason === reason);
+    if (!entry) throw new Error(`No contract entry for ${reason}`);
+    return entry.recovery;
+  }
+
+  const retryWithNumber = 'Retry with numericType "number"; integrate() is available only there.';
+
+  it.each<{ input: ToolInput; result: string; resultType: string }>([
+    {
+      input: { expression: 'dateDiff("2026-10-17", "2026-10-31")' },
+      result: '14',
+      resultType: 'number',
+    },
+    { input: { expression: 'weekday("2026-10-26")' }, result: '"Monday"', resultType: 'string' },
+    {
+      input: { expression: 'integrate(exp(-x^2), x, 0, 1)', precision: 12 },
+      result: '0.746824132812',
+      resultType: 'number',
+    },
+  ])('returns $input.expression on both surfaces', async ({ input, result, resultType }) => {
+    const output = await runToolContract(calculateTool, input);
+    expect(output.isError).not.toBe(true);
+    expect(output.structuredContent).toMatchObject({
+      result,
+      resultType,
+      expression: input.expression,
+      operation: 'evaluate',
+    });
+    const text = textOf(output);
+    expect(text).toContain(`Result: ${result}`);
+    expect(text).toContain(`Type: ${resultType}`);
+  });
+
+  it.each<{ input: ToolInput; reason: string; message: string; hint: string }>([
+    {
+      input: { expression: 'isoWeek(2026-10-26)' },
+      reason: 'evaluation_failed',
+      message: 'it got the number 1990',
+      hint: declaredRecovery('evaluation_failed'),
+    },
+    {
+      input: { expression: 'now()' },
+      reason: 'parse_failed',
+      message: 'now() is not available: the calculator reads no clock',
+      hint: 'Pass the current date as a quoted YYYY-MM-DD string where now() would go, e.g. dateDiff("2026-10-17", "2026-12-25").',
+    },
+    {
+      input: { expression: 'integrate(1/x, x, -1, 1)' },
+      reason: 'evaluation_failed',
+      message: 'non-finite integrand (Infinity) at x = 0',
+      hint: declaredRecovery('evaluation_failed'),
+    },
+    {
+      input: { expression: 'integrate(x^2, x, 0, 1)', numericType: 'Fraction' },
+      reason: 'fraction_unsupported',
+      message: 'numericType "Fraction" cannot hold exactly',
+      hint: retryWithNumber,
+    },
+    {
+      input: { expression: 'integrate(x^2, x, 0, 1)', numericType: 'BigNumber' },
+      reason: 'evaluation_failed',
+      message: 'cannot carry BigNumber precision',
+      hint: retryWithNumber,
+    },
+  ])(
+    'fails $input.expression with $reason on both surfaces',
+    async ({ input, reason, message, hint }) => {
+      const output = await runToolContract(calculateTool, input);
+      expect(output.isError).toBe(true);
+      expect(output.structuredContent).toMatchObject({
+        error: {
+          code: JsonRpcErrorCode.ValidationError,
+          message: expect.stringContaining(message),
+          data: { reason, recovery: { hint } },
+        },
+      });
+      const text = textOf(output);
+      expect(text).toContain(message);
+      expect(text).toContain(hint);
+      expect(text).toContain(`reason ${reason}`);
+    },
+  );
+});
+
+/** `**`, `÷`, `−`, `×`, and `°` read as math.js operators (#47), through the production rendering path. */
+describe('operator spellings on both response surfaces (#47)', () => {
+  it.each([
+    { input: { expression: '2 ** 10' }, result: '1024', operation: 'evaluate' },
+    {
+      input: { expression: 'x × x', operation: 'simplify' as const },
+      result: 'x ^ 2',
+      operation: 'simplify',
+    },
+  ])('reads $input.expression and echoes it as written', async ({ input, result, operation }) => {
+    const output = await runToolContract(calculateTool, input);
+    expect(output.isError).toBeFalsy();
+    expect(output.structuredContent).toMatchObject({
+      result,
+      expression: input.expression,
+      operation,
+    });
+    expect(textOf(output)).toContain(
+      `Expression: ${input.expression}\nOperation: ${operation}\nResult: ${result}`,
+    );
+  });
+
+  it.each([
+    {
+      expression: '[1,0,0] × [0,1,0]',
+      reason: 'type_mismatch',
+      message:
+        '"×" multiplies scalars only, and an operand here is a vector or matrix. Write cross(a, b) for the cross product, or * for the dot or matrix product.',
+      hint: 'Write cross(a, b) for the cross product, or * for the dot or matrix product.',
+    },
+    {
+      expression: '[1,2;3,4] ** 2',
+      reason: 'type_mismatch',
+      message:
+        '"**" raises scalars only, and an operand here is a vector or matrix. Write ^ for the matrix power, or .^ for the element-wise power.',
+      hint: 'Write ^ for the matrix power, or .^ for the element-wise power.',
+    },
+    {
+      expression: '2 ** ** 3',
+      reason: 'parse_failed',
+      message: 'Invalid expression: Value expected (char 6)',
+      hint: calculateTool.errors?.find((entry) => entry.reason === 'parse_failed')?.recovery,
+    },
+  ])(
+    'fails $expression with $reason on both surfaces',
+    async ({ expression, reason, message, hint }) => {
+      const output = await runToolContract(calculateTool, { expression });
+      expect(output.isError).toBe(true);
+      expect(output.structuredContent).toMatchObject({
+        error: {
+          code: JsonRpcErrorCode.ValidationError,
+          message,
+          data: { reason, recovery: { hint } },
+        },
+      });
+      const text = textOf(output);
+      expect(text).toContain(message);
+      expect(text).toContain(`reason ${reason}`);
+    },
+  );
+});
+
+/** numericType "BigNumber" scope values (#41) and its throw-site recovery hints, through the production rendering path. */
+describe('numericType "BigNumber" on both response surfaces', () => {
+  it('computes with scope values as BigNumbers', async () => {
+    const input = {
+      expression: '(x+y)-x',
+      scope: { x: 1e16, y: 1 },
+      numericType: 'BigNumber' as const,
+    };
+    const output = await runToolContract(calculateTool, input);
+    expect(output.isError).toBeFalsy();
+    expect(output.structuredContent).toMatchObject({
+      result: '1',
+      resultType: 'BigNumber',
+      scopeVars: ['x', 'y'],
+    });
+    expect(textOf(output)).toContain(
+      'Operation: evaluate\nResult: 1\nType: BigNumber\nScope variables: x, y',
+    );
+  });
+
+  it.each([
+    ['gamma(0.5)', 'Evaluation failed: Integer BigNumber expected'],
+    [
+      'zeta(2)',
+      "Evaluation failed: zeta has no BigNumber implementation: math.js's BigNumber zeta is correct to about 7 significant digits, not 64",
+    ],
+  ])(
+    'sends %s a hint that fits the mode in place of the contract hint',
+    async (expression, message) => {
+      const hint =
+        'A function in this expression has no BigNumber implementation for its argument (erf, lgamma, and zeta have none; gamma and factorial take only integers under BigNumber): retry with numericType "number", which computes it as a 64-bit float.';
+      const output = await runToolContract(calculateTool, { expression, numericType: 'BigNumber' });
+      expect(output.isError).toBe(true);
+      expect(output.structuredContent).toMatchObject({
+        error: {
+          code: JsonRpcErrorCode.ValidationError,
+          message,
+          data: { reason: 'evaluation_failed', recovery: { hint } },
+        },
+      });
+      const text = textOf(output);
+      expect(text).toContain(message);
+      expect(text).toContain(hint);
+      expect(text).toContain('reason evaluation_failed');
+    },
+  );
+});
+
+/** Recovery hints the service writes at the throw site: the code each quotes is a code span in `content[]`. */
+describe('throw-site recovery hints render their code as code spans', () => {
+  const floatHint =
+    'BigNumber arithmetic takes a 64-bit float implicitly only up to 15 significant digits: wrap the float in bignumber(…) to convert it explicitly, e.g. bignumber(random()) + 1.';
+  const floatLine =
+    'Recovery: BigNumber arithmetic takes a 64-bit float implicitly only up to 15 significant digits: wrap the float in `bignumber(…)` to convert it explicitly, e.g. `bignumber(random()) + 1`.';
+  const undefinedHint =
+    'Division by zero, 0/0, and log(0) are undefined in every numericType, so fix the expression. Under numericType "BigNumber" an overflow has passed a decimal exponent of 9e15, so compute the logarithm of the value instead; an inverse trig or hyperbolic function outside its real domain (asin(2), acosh(0.5)) is NaN here, while numericType "number" returns its complex value.';
+  const undefinedLine =
+    'Recovery: Division by zero, 0/0, and log(0) are undefined in every numericType, so fix the expression. Under numericType "BigNumber" an overflow has passed a decimal exponent of 9e15, so compute the logarithm of the value instead; an inverse trig or hyperbolic function outside its real domain (`asin(2)`, `acosh(0.5)`) is NaN here, while numericType "number" returns its complex value.';
+
+  it.each([
+    ['bignumber(1) + 1/3', 'number', 'type_mismatch', floatHint, floatLine],
+    ['map([1], f(x) = number(1/3) + x)', 'BigNumber', 'evaluation_failed', floatHint, floatLine],
+    ['1 / 0', 'BigNumber', 'undefined_result', undefinedHint, undefinedLine],
+    ['fraction(1) / fraction(0)', 'BigNumber', 'undefined_result', undefinedHint, undefinedLine],
+  ] as const)('%s under %s → %s', async (expression, numericType, reason, hint, line) => {
+    const output = await runToolContract(calculateTool, { expression, numericType });
+    expect(output.isError).toBe(true);
+    expect(output.structuredContent).toMatchObject({
+      error: { data: { reason, recovery: { hint } } },
+    });
+    const text = output.content
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text)
+      .join('\n');
+    expect(text.split('\n\n')).toContain(line);
+    // A CommonMark client reads the hint back exactly as structuredContent carries it.
+    expect(markdownText(text)).toContain(`Recovery: ${hint}`);
   });
 });

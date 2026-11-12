@@ -147,6 +147,221 @@ describe('limit boundaries', () => {
   });
 });
 
+describe('range predicts the elements it builds (#43)', () => {
+  /** The message of a range rejected on its predicted count, before it allocates. */
+  const predicted =
+    /^Size limit exceeded: range\(\) would build (?:[\d,]+|unbounded) elements, over the limit of 1,000,000\.$/;
+
+  it.each([
+    'range(2000000, 1)',
+    'range(1, 2000000, -1)',
+    'range("2000000:1")',
+    'range(Infinity, 1)',
+  ])('returns %s, which steps away from its end, as an empty matrix', (expression) => {
+    expect(evaluate(expression).result).toBe('[]');
+  });
+
+  it('counts the elements of an empty range expression as 0', () => {
+    expect(evaluate('count(2000000:1)').result).toBe('0');
+  });
+
+  it.each([
+    'count(range(1, 1000001, false))',
+    'count(range(1, 1000001, 1, false))',
+    'count(range(1000001, 1, -1, false))',
+    'count(range("1:1000001", false))',
+  ])('builds %s, an end-exclusive range of exactly MAX_MATRIX_ELEMENTS', (expression) => {
+    expect(evaluate(expression).result).toBe(String(MAX_MATRIX_ELEMENTS));
+  });
+
+  it.each(['range(1, 2, 0)', '1:0:2', 'range("1:0:2")', '[1, 2, 3, 4, 5][1:0:2]'])(
+    'fails %s with the zero-step evaluation_failed under every numericType',
+    (expression) => {
+      for (const numericType of ['number', 'BigNumber', 'Fraction'] as const) {
+        const { error } = timedFailure(expression, numericType);
+        expect(error.data?.reason, numericType).toBe('evaluation_failed');
+        expect(error.message, numericType).toBe('Evaluation failed: Step must be non-zero');
+      }
+    },
+  );
+
+  it.each([
+    'range(1, 2000000)',
+    'range(2000000, 1, -1)',
+    '1:2000000',
+    'range(0, 1, 1e-7)',
+    'range(1, Infinity)',
+    'range("1:100000000")',
+    'sum(range(1, 1e6 + 1))',
+    // End-exclusive with a fractional span: 1,000,000.5 steps build 1,000,001 elements.
+    'range(0, 1e6 + 0.5, 1, false)',
+  ])('rejects %s on its predicted count', (expression) => {
+    const { error, cpuMs } = timedFailure(expression);
+    expect(error.data?.reason).toBe('result_too_large');
+    expect(error.message).toMatch(predicted);
+    expect(cpuMs).toBeLessThan(1500);
+  });
+
+  it.each([
+    ['count(range(1, 1000000))', '1000000'],
+    ['sum(range(1, 1e6))', '500000500000'],
+    ['range(1, NaN)', '[]'],
+    ['[1, 2, 3, 4, 5][2:4]', '[2, 3, 4]'],
+    ['[1, 2, 3, 4, 5][3:end]', '[3, 4, 5]'],
+  ])('%s → %s', (expression, expected) => {
+    expect(evaluate(expression).result).toBe(expected);
+  });
+
+  it('keeps exact Fraction steps', () => {
+    expect(evaluate('range(1, 2, 1/3)', 'Fraction').result).toBe('[1/1, 4/3, 5/3, 2/1]');
+  });
+});
+
+describe('range takes at most MAX_MATRIX_ELEMENTS steps', () => {
+  /** The message of a range stopped at the per-call step limit. */
+  const stepLimit =
+    'Size limit exceeded: range() would build more than the limit of 1,000,000 elements.';
+
+  it.each([
+    ['count(2^53:2^53+2)', 'number'],
+    ['count(1e16:1e16+4)', 'number'],
+    ['count(Infinity:Infinity)', 'number'],
+    ['count(1e70:1e70+4)', 'BigNumber'],
+    ['count(range(1e400, 1e400 + 5))', 'BigNumber'],
+  ] as const)('holds %s (%s) to MAX_MATRIX_ELEMENTS steps', (expression, numericType) => {
+    const { error } = timedFailure(expression, numericType);
+    expect(error.data?.reason).toBe('result_too_large');
+    expect(error.message).toBe(stepLimit);
+  });
+
+  it('stops a range that the comparison tolerance carries one element past the limit', () => {
+    // The span predicts exactly MAX_MATRIX_ELEMENTS, and 1e6 is within math.js's
+    // relative tolerance of the end, so the range would include it too.
+    const { error } = timedFailure('count(range(0, 1e6 - 1e-7))');
+    expect(error.message).toBe(stepLimit);
+    expect(evaluate('count(range(0, 1e6 - 1e-5))').result).toBe('1000000');
+  });
+
+  it.each([
+    ['count(range(1000000, 1, -1))', 'number'],
+    ['count(range(1, 1e6))', 'BigNumber'],
+    ['count(range(1, 1e6))', 'Fraction'],
+  ] as const)(
+    'builds %s (%s), a range of exactly MAX_MATRIX_ELEMENTS',
+    (expression, numericType) => {
+      expect(evaluate(expression, numericType).result).toBe('1000000');
+    },
+  );
+
+  it.each([
+    // The outer range's end is computed by a range of the same length.
+    ['count(range(1, count(range(1, 900000))))', '900000'],
+    // Three callback ranges inside a fourth, together past the limit.
+    ['sum(map(range(1, 3), f(i) = count(range(1, 900000))))', '2700000'],
+    ['count(1:900000) + count(1:900000)', '1800000'],
+  ])('counts the steps of each range in %s separately', (expression, expected) => {
+    expect(evaluate(expression).result).toBe(expected);
+  });
+
+  it('holds a range inside a map callback to the step limit', () => {
+    const { error } = timedFailure('map(1:2, f(i) = count(2^53:2^53+2))');
+    expect(error.data?.reason).toBe('result_too_large');
+    expect(error.message).toBe(stepLimit);
+  });
+});
+
+describe('tabulated sequences take an index up to a stated maximum', () => {
+  it.each([
+    // S(n, n − 1) = C(n, 2).
+    ['stirlingS2(1412, 1411)', 'number', '996166'],
+    ['stirlingS2(314, 313)', 'BigNumber', '49141'],
+    // S(n, 2) = 2^(n − 1) − 1; the BigNumber maximum applies only to a BigNumber argument.
+    ['stirlingS2(315, 2) == 2^314 - 1', 'number', 'true'],
+    // B(1000) ≈ −5.3e1769 overflows math.js's float recurrence.
+    ['isNaN(bernoulli(1000))', 'number', 'true'],
+    // Past the maximum, an odd index builds nothing.
+    ['bernoulli(100001)', 'number', '0'],
+  ] as const)('takes %s (%s) → %s', (expression, numericType, expected) => {
+    expect(evaluate(expression, numericType).result).toBe(expected);
+  });
+
+  it('takes bellNumbers at each maximum', () => {
+    // B(1412) is past 1e308, so the float result overflows; the BigNumber one is finite.
+    expect(timedFailure('bellNumbers(1412)').error.data?.reason).toBe('undefined_result');
+    expect(evaluate('bellNumbers(314)', 'BigNumber').resultType).toBe('BigNumber');
+  });
+
+  it('takes bernoulli(1000) under BigNumber', () => {
+    // B(n) is negative for n divisible by 4, and |B(1000)| ≈ 4√(1000π)·(1000/2πe)^1000 ≈ 10^1769.7.
+    expect(evaluate('bernoulli(1000)', 'BigNumber').result).toMatch(/^-[1-9]\.\d+e\+1769$/);
+  });
+
+  it.each([
+    [
+      'stirlingS2(1413, 1)',
+      'number',
+      'stirlingS2() takes n up to 1,412 (314 when an argument is a BigNumber); got n = 1,413.',
+    ],
+    [
+      'bellNumbers(1413)',
+      'number',
+      'bellNumbers() takes n up to 1,412 (314 when an argument is a BigNumber); got n = 1,413.',
+    ],
+    [
+      'stirlingS2(315, 1)',
+      'BigNumber',
+      'stirlingS2() takes n up to 314 when an argument is a BigNumber (1,412 for numbers); got n = 315.',
+    ],
+    [
+      'bellNumbers(315)',
+      'BigNumber',
+      'bellNumbers() takes n up to 314 when an argument is a BigNumber (1,412 for numbers); got n = 315.',
+    ],
+    [
+      'stirlingS2(bignumber(315), 2)',
+      'number',
+      'stirlingS2() takes n up to 314 when an argument is a BigNumber (1,412 for numbers); got n = 315.',
+    ],
+    [
+      'stirlingS2(315, bignumber(2))',
+      'number',
+      'stirlingS2() takes n up to 314 when an argument is a BigNumber (1,412 for numbers); got n = 315.',
+    ],
+    ['bernoulli(1002)', 'number', 'bernoulli() takes an even n up to 1,000; got n = 1,002.'],
+    ['bernoulli(1002)', 'BigNumber', 'bernoulli() takes an even n up to 1,000; got n = 1,002.'],
+    ['bernoulli(1002)', 'Fraction', 'bernoulli() takes an even n up to 1,000; got n = 1,002.'],
+  ] as const)('rejects %s (%s) above its maximum', (expression, numericType, detail) => {
+    const { error, cpuMs } = timedFailure(expression, numericType);
+    expect(error.data?.reason).toBe('result_too_large');
+    expect(error.message).toBe(`Size limit exceeded: ${detail}`);
+    expect(cpuMs).toBeLessThan(1500);
+  });
+});
+
+describe('Fraction-mode dimension arguments of diff and mapSlices', () => {
+  it.each([
+    ['mapSlices([1, 2; 3, 4], 1, sum)', '[4/1, 6/1]'],
+    ['mapSlices([1, 2; 3, 4], 2, sum)', '[3/1, 7/1]'],
+    ['apply([1, 2; 3, 4], 1, sum)', '[4/1, 6/1]'],
+    // The callback indexes each column with a Fraction literal too.
+    ['mapSlices([1, 2; 3, 4], 1, f(v) = v[2])', '[3/1, 4/1]'],
+    ['diff([1, 2; 4, 8], 1)', '[[3/1, 6/1]]'],
+    ['diff([1, 2; 4, 8], 2)', '[[1/1], [4/1]]'],
+    ['diff(diff([1, 2, 4; 8, 16, 32], 2), 1)', '[[7/1, 14/1]]'],
+  ])('%s → %s', (expression, expected) => {
+    expect(evaluate(expression, 'Fraction').result).toBe(expected);
+  });
+
+  it.each([
+    ['diff([1, 2; 4, 8], 1/2)', 'diff() needs whole-number dimensions; got 1/2.'],
+    ['mapSlices([1, 2; 3, 4], 3/2, sum)', 'mapSlices() needs whole-number dimensions; got 3/2.'],
+  ])('rejects %s, whose dimension is not a whole number', (expression, detail) => {
+    const { error } = timedFailure(expression, 'Fraction');
+    expect(error.data?.reason).toBe('evaluation_failed');
+    expect(error.message).toBe(`Evaluation failed: ${detail}`);
+  });
+});
+
 describe('result elements are bounded before formatting', () => {
   it('formats the largest collection that fits and rejects one element more', () => {
     const { result } = evaluate('zeros(33333)');
